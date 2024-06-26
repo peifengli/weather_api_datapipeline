@@ -2,9 +2,9 @@ provider "aws" {
   region = "us-east-1"
 }
 
-# resource "aws_secretsmanager_secret" "openweather_api_key" {
-#   name = "openweather_api_key"
-# }
+resource "aws_secretsmanager_secret" "openweather_api_key" {
+  name = "openweather_api_key"
+}
 
 # Create S3 bucket
 resource "aws_s3_bucket" "weatherdata1" {
