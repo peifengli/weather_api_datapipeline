@@ -37,30 +37,31 @@ logger = glue_context.get_logger()
 
 TRISTATE_CITIES = [
     ("New York City", "NY", 40.7128, -74.0060),
-    ("Buffalo",       "NY", 42.8864, -78.8784),
-    ("Rochester",     "NY", 43.1566, -77.6088),
-    ("Albany",        "NY", 42.6526, -73.7562),
-    ("Yonkers",       "NY", 40.9312, -73.8988),
-    ("Syracuse",      "NY", 43.0481, -76.1474),
-    ("White Plains",  "NY", 41.0340, -73.7629),
-    ("Newark",        "NJ", 40.7357, -74.1724),
-    ("Jersey City",   "NJ", 40.7178, -74.0431),
-    ("Paterson",      "NJ", 40.9168, -74.1718),
-    ("Elizabeth",     "NJ", 40.6640, -74.2107),
-    ("Trenton",       "NJ", 40.2170, -74.7429),
-    ("Edison",        "NJ", 40.5187, -74.4121),
-    ("Bridgeport",    "CT", 41.1865, -73.1952),
-    ("New Haven",     "CT", 41.3083, -72.9279),
-    ("Stamford",      "CT", 41.0534, -73.5387),
-    ("Hartford",      "CT", 41.7658, -72.6851),
-    ("Waterbury",     "CT", 41.5582, -73.0515),
-    ("Norwalk",       "CT", 41.1177, -73.4082),
+    ("Buffalo", "NY", 42.8864, -78.8784),
+    ("Rochester", "NY", 43.1566, -77.6088),
+    ("Albany", "NY", 42.6526, -73.7562),
+    ("Yonkers", "NY", 40.9312, -73.8988),
+    ("Syracuse", "NY", 43.0481, -76.1474),
+    ("White Plains", "NY", 41.0340, -73.7629),
+    ("Newark", "NJ", 40.7357, -74.1724),
+    ("Jersey City", "NJ", 40.7178, -74.0431),
+    ("Paterson", "NJ", 40.9168, -74.1718),
+    ("Elizabeth", "NJ", 40.6640, -74.2107),
+    ("Trenton", "NJ", 40.2170, -74.7429),
+    ("Edison", "NJ", 40.5187, -74.4121),
+    ("Bridgeport", "CT", 41.1865, -73.1952),
+    ("New Haven", "CT", 41.3083, -72.9279),
+    ("Stamford", "CT", 41.0534, -73.5387),
+    ("Hartford", "CT", 41.7658, -72.6851),
+    ("Waterbury", "CT", 41.5582, -73.0515),
+    ("Norwalk", "CT", 41.1177, -73.4082),
 ]
 
 BASE_URL = "https://api.openweathermap.org/data/2.5/weather"
 
 
 # ── Worker-side fetch (runs on Spark executors) ────────────────────────────────
+
 
 def _fetch_city(city: tuple, api_key: str) -> dict | None:
     """Executed on each Spark worker. Returns a flat record dict or None on failure."""
@@ -118,6 +119,7 @@ def _fetch_city(city: tuple, api_key: str) -> dict | None:
 
 # ── Driver logic ───────────────────────────────────────────────────────────────
 
+
 def _get_api_key(secret_name: str) -> str:
     import os
 
@@ -161,19 +163,14 @@ def main() -> None:
     run_time = datetime.now(timezone.utc)
     df = spark.createDataFrame(records)
     df = (
-        df.withColumn("year",  F.lit(run_time.year))
-          .withColumn("month", F.lit(run_time.month))
-          .withColumn("day",   F.lit(run_time.day))
-          .withColumn("hour",  F.lit(run_time.hour))
+        df.withColumn("year", F.lit(run_time.year))
+        .withColumn("month", F.lit(run_time.month))
+        .withColumn("day", F.lit(run_time.day))
+        .withColumn("hour", F.lit(run_time.hour))
     )
 
     output_path = f"s3://{raw_bucket}/weather"
-    (
-        df.write
-          .mode("append")
-          .partitionBy("year", "month", "day", "hour")
-          .json(output_path)
-    )
+    (df.write.mode("append").partitionBy("year", "month", "day", "hour").json(output_path))
 
     logger.info(f"Job complete | records={len(records)} path={output_path}")
     job.commit()

@@ -40,11 +40,22 @@ logger = glue_context.get_logger()
 # ── Constants ─────────────────────────────────────────────────────────────────
 
 REQUIRED_COLS = [
-    "city", "state", "country", "lat", "lon",
-    "fetched_at", "observed_at",
-    "temp_f", "feels_like_f", "temp_min_f", "temp_max_f",
-    "humidity_pct", "pressure_hpa", "wind_speed_mph",
-    "condition_main", "condition_description",
+    "city",
+    "state",
+    "country",
+    "lat",
+    "lon",
+    "fetched_at",
+    "observed_at",
+    "temp_f",
+    "feels_like_f",
+    "temp_min_f",
+    "temp_max_f",
+    "humidity_pct",
+    "pressure_hpa",
+    "wind_speed_mph",
+    "condition_main",
+    "condition_description",
 ]
 
 CATALOG_DATABASE = f"weatherdata_{args['ENVIRONMENT']}"
@@ -52,6 +63,7 @@ CATALOG_TABLE = "weather_processed"
 
 
 # ── Helpers ───────────────────────────────────────────────────────────────────
+
 
 def _parse_run_hour(run_hour: str) -> datetime:
     return datetime.strptime(run_hour, "%Y-%m-%dT%H").replace(tzinfo=timezone.utc)
@@ -67,6 +79,7 @@ def _raw_s3_path(bucket: str, dt: datetime) -> str:
 
 # ── Main ──────────────────────────────────────────────────────────────────────
 
+
 def main() -> None:
     raw_bucket = args["S3_RAW_BUCKET"]
     processed_bucket = args["S3_PROCESSED_BUCKET"]
@@ -80,10 +93,9 @@ def main() -> None:
     # ── Ingest ────────────────────────────────────────────────────────────────
     # spark.read.json auto-infers schema and reads all part files in the prefix
     raw_df = (
-        spark.read
-             .option("recursiveFileLookup", "true")
-             .option("multiLine", "false")
-             .json(input_path)
+        spark.read.option("recursiveFileLookup", "true")
+        .option("multiLine", "false")
+        .json(input_path)
     )
     raw_df.cache()
     total_count = raw_df.count()
@@ -130,13 +142,13 @@ def main() -> None:
         # Audit column
         .withColumn("processed_at", F.lit(datetime.now(timezone.utc).isoformat()))
         # Hive partition columns — written as directory names by Spark
-        .withColumn("year",  F.lit(dt.year))
+        .withColumn("year", F.lit(dt.year))
         .withColumn("month", F.lit(dt.month))
-        .withColumn("day",   F.lit(dt.day))
-        .withColumn("hour",  F.lit(dt.hour))
+        .withColumn("day", F.lit(dt.day))
+        .withColumn("hour", F.lit(dt.hour))
         # SI unit conversions for international consumers
-        .withColumn("temp_c",        F.round((F.col("temp_f") - 32) * 5 / 9, 2))
-        .withColumn("feels_like_c",  F.round((F.col("feels_like_f") - 32) * 5 / 9, 2))
+        .withColumn("temp_c", F.round((F.col("temp_f") - 32) * 5 / 9, 2))
+        .withColumn("feels_like_c", F.round((F.col("feels_like_f") - 32) * 5 / 9, 2))
         .withColumn("wind_speed_ms", F.round(F.col("wind_speed_mph") * 0.44704, 3))
     )
 
@@ -145,11 +157,10 @@ def main() -> None:
     # partition pruning eliminates unneeded files from every query.
     output_path = f"s3://{processed_bucket}/weather"
     (
-        processed_df.write
-                    .mode("append")
-                    .option("compression", "snappy")
-                    .partitionBy("year", "month", "day", "hour")
-                    .parquet(output_path)
+        processed_df.write.mode("append")
+        .option("compression", "snappy")
+        .partitionBy("year", "month", "day", "hour")
+        .parquet(output_path)
     )
 
     logger.info(f"Parquet written | path={output_path}")
