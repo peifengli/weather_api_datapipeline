@@ -89,7 +89,7 @@ resource "aws_iam_role_policy_attachment" "lambda_glue" {
 
 data "archive_file" "lambda_zip" {
   type        = "zip"
-  source_file = "${path.root}/src/lambda/trigger_pipeline.py"
+  source_file = "${path.module}/../../../src/lambda/trigger_pipeline.py"
   output_path = "${path.module}/trigger_pipeline.zip"
 }
 
@@ -155,8 +155,8 @@ resource "aws_scheduler_schedule" "hourly" {
     mode = "OFF"
   }
 
-  # 5 minutes past every hour
-  schedule_expression          = "cron(5 * * * ? *)"
+  # Every 15 minutes
+  schedule_expression          = "rate(15 minutes)"
   schedule_expression_timezone = "UTC"
 
   target {
