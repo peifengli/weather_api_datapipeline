@@ -1,149 +1,178 @@
 """
-AWS Glue Python Shell Job: process_weather
-Reads raw JSON files from S3, flattens/validates, writes processed JSON back to S3.
-Runs after fetch_weather completes.
+AWS Glue ETL Job: process_weather
+
+Reads raw JSON for a given hour partition from S3, validates records with
+Spark DataFrame operations, enriches with derived columns, and writes
+compressed Parquet to the processed bucket — partitioned for fast Athena queries.
+
+Writes are also registered in the Glue Data Catalog via DynamicFrame so
+Athena can query without a separate crawler run.
 """
 
 from __future__ import annotations
 
-import json
-import logging
 import sys
 from datetime import datetime, timezone
+from functools import reduce
 
-import boto3
+from awsglue.context import GlueContext
+from awsglue.dynamicframe import DynamicFrame
+from awsglue.job import Job
+from awsglue.utils import getResolvedOptions
+from pyspark.context import SparkContext
+from pyspark.sql import functions as F
 
-try:
-    from awsglue.utils import getResolvedOptions  # type: ignore[import]
+# ── Job bootstrap ─────────────────────────────────────────────────────────────
 
-    args = getResolvedOptions(
-        sys.argv,
-        ["JOB_NAME", "S3_RAW_BUCKET", "S3_PROCESSED_BUCKET", "ENVIRONMENT", "RUN_HOUR"],
-    )
-except Exception:
-    import os
+args = getResolvedOptions(
+    sys.argv,
+    ["JOB_NAME", "S3_RAW_BUCKET", "S3_PROCESSED_BUCKET", "ENVIRONMENT", "RUN_HOUR"],
+)
 
-    now = datetime.now(timezone.utc)
-    args = {
-        "JOB_NAME": "process_weather_local",
-        "S3_RAW_BUCKET": os.getenv("S3_RAW_BUCKET", "weatherdata-raw"),
-        "S3_PROCESSED_BUCKET": os.getenv("S3_PROCESSED_BUCKET", "weatherdata-processed"),
-        "ENVIRONMENT": os.getenv("ENVIRONMENT", "local"),
-        "RUN_HOUR": now.strftime("%Y-%m-%dT%H"),
-    }
+sc = SparkContext()
+glue_context = GlueContext(sc)
+spark = glue_context.spark_session
+job = Job(glue_context)
+job.init(args["JOB_NAME"], args)
 
-logging.basicConfig(level=logging.INFO, format="%(asctime)s %(levelname)s %(name)s %(message)s")
-logger = logging.getLogger("process_weather")
+logger = glue_context.get_logger()
 
-import os  # noqa: E402
+# ── Constants ─────────────────────────────────────────────────────────────────
 
-sys.path.insert(0, os.path.dirname(os.path.dirname(os.path.abspath(__file__))))
+REQUIRED_COLS = [
+    "city", "state", "country", "lat", "lon",
+    "fetched_at", "observed_at",
+    "temp_f", "feels_like_f", "temp_min_f", "temp_max_f",
+    "humidity_pct", "pressure_hpa", "wind_speed_mph",
+    "condition_main", "condition_description",
+]
 
-from src.config import Config  # noqa: E402
-
-REQUIRED_FIELDS = {
-    "city",
-    "state",
-    "country",
-    "lat",
-    "lon",
-    "fetched_at",
-    "observed_at",
-    "temp_f",
-    "feels_like_f",
-    "temp_min_f",
-    "temp_max_f",
-    "humidity_pct",
-    "pressure_hpa",
-    "wind_speed_mph",
-    "wind_deg",
-    "clouds_pct",
-    "condition_main",
-    "condition_description",
-}
+CATALOG_DATABASE = f"weatherdata_{args['ENVIRONMENT']}"
+CATALOG_TABLE = "weather_processed"
 
 
-def _list_raw_keys(s3_client, bucket: str, prefix: str) -> list[str]:
-    paginator = s3_client.get_paginator("list_objects_v2")
-    keys = []
-    for page in paginator.paginate(Bucket=bucket, Prefix=prefix):
-        for obj in page.get("Contents", []):
-            keys.append(obj["Key"])
-    return keys
+# ── Helpers ───────────────────────────────────────────────────────────────────
+
+def _parse_run_hour(run_hour: str) -> datetime:
+    return datetime.strptime(run_hour, "%Y-%m-%dT%H").replace(tzinfo=timezone.utc)
 
 
-def _build_raw_prefix(run_hour: str) -> str:
-    dt = datetime.strptime(run_hour, "%Y-%m-%dT%H")
+def _raw_s3_path(bucket: str, dt: datetime) -> str:
     return (
-        f"weather/"
-        f"year={dt.year:04d}/"
-        f"month={dt.month:02d}/"
-        f"day={dt.day:02d}/"
-        f"hour={dt.hour:02d}/"
+        f"s3://{bucket}/weather/"
+        f"year={dt.year}/month={dt.month}/"
+        f"day={dt.day}/hour={dt.hour}/"
     )
 
 
-def _processed_key(city_slug: str, run_hour: str) -> str:
-    dt = datetime.strptime(run_hour, "%Y-%m-%dT%H")
-    return (
-        f"weather/"
-        f"year={dt.year:04d}/month={dt.month:02d}/day={dt.day:02d}/"
-        f"{city_slug}_{dt.hour:02d}00.json"
-    )
-
-
-def validate(record: dict) -> list[str]:
-    missing = [f for f in REQUIRED_FIELDS if record.get(f) is None]
-    errors = []
-    if missing:
-        errors.append(f"Missing fields: {missing}")
-    if record.get("temp_f") is not None and not (-100 < record["temp_f"] < 150):
-        errors.append(f"temp_f out of range: {record['temp_f']}")
-    if record.get("humidity_pct") is not None and not (0 <= record["humidity_pct"] <= 100):
-        errors.append(f"humidity_pct out of range: {record['humidity_pct']}")
-    return errors
-
+# ── Main ──────────────────────────────────────────────────────────────────────
 
 def main() -> None:
-    config = Config()
     raw_bucket = args["S3_RAW_BUCKET"]
     processed_bucket = args["S3_PROCESSED_BUCKET"]
     run_hour = args["RUN_HOUR"]
 
-    logger.info("Starting process_weather | run_hour=%s", run_hour)
+    dt = _parse_run_hour(run_hour)
+    input_path = _raw_s3_path(raw_bucket, dt)
 
-    s3 = boto3.client("s3", region_name=config.aws_region, endpoint_url=config.aws_endpoint_url)
+    logger.info(f"process_weather starting | run_hour={run_hour} input={input_path}")
 
-    prefix = _build_raw_prefix(run_hour)
-    raw_keys = _list_raw_keys(s3, raw_bucket, prefix)
-    logger.info("Found %d raw files under s3://%s/%s", len(raw_keys), raw_bucket, prefix)
+    # ── Ingest ────────────────────────────────────────────────────────────────
+    # spark.read.json auto-infers schema and reads all part files in the prefix
+    raw_df = (
+        spark.read
+             .option("recursiveFileLookup", "true")
+             .option("multiLine", "false")
+             .json(input_path)
+    )
+    raw_df.cache()
+    total_count = raw_df.count()
 
-    processed, skipped = 0, 0
-    for key in raw_keys:
-        obj = s3.get_object(Bucket=raw_bucket, Key=key)
-        record = json.loads(obj["Body"].read())
+    if total_count == 0:
+        logger.error(f"No raw records found at {input_path} — aborting")
+        raise RuntimeError("No raw data to process")
 
-        errors = validate(record)
-        if errors:
-            logger.warning("Validation failed for %s: %s", key, errors)
-            skipped += 1
-            continue
+    logger.info(f"Loaded {total_count} raw records from {input_path}")
 
-        city_slug = f"{record['city'].lower().replace(' ', '_')}_{record['state'].lower()}"
-        out_key = _processed_key(city_slug, run_hour)
+    # ── Validation (distributed, no Python loops) ─────────────────────────────
+    not_null = reduce(
+        lambda a, b: a & b,
+        [F.col(c).isNotNull() for c in REQUIRED_COLS],
+    )
+    in_range = (
+        F.col("temp_f").between(-100, 150)
+        & F.col("humidity_pct").between(0, 100)
+        & F.col("pressure_hpa").between(870, 1085)
+        & (F.col("wind_speed_mph") >= 0)
+    )
 
-        s3.put_object(
-            Bucket=processed_bucket,
-            Key=out_key,
-            Body=json.dumps(record, default=str).encode("utf-8"),
-            ContentType="application/json",
+    valid_df = raw_df.filter(not_null & in_range)
+    valid_df.cache()
+
+    valid_count = valid_df.count()
+    invalid_count = total_count - valid_count
+
+    if invalid_count > 0:
+        logger.warn(f"Dropped {invalid_count} records that failed validation")
+
+    # ── Enrichment ────────────────────────────────────────────────────────────
+    processed_df = (
+        valid_df
+        # Normalised slug for downstream joins / partitioning
+        .withColumn(
+            "city_slug",
+            F.concat_ws(
+                "_",
+                F.lower(F.regexp_replace(F.col("city"), r"\s+", "_")),
+                F.lower(F.col("state")),
+            ),
         )
-        processed += 1
+        # Audit column
+        .withColumn("processed_at", F.lit(datetime.now(timezone.utc).isoformat()))
+        # Hive partition columns — written as directory names by Spark
+        .withColumn("year",  F.lit(dt.year))
+        .withColumn("month", F.lit(dt.month))
+        .withColumn("day",   F.lit(dt.day))
+        .withColumn("hour",  F.lit(dt.hour))
+        # SI unit conversions for international consumers
+        .withColumn("temp_c",        F.round((F.col("temp_f") - 32) * 5 / 9, 2))
+        .withColumn("feels_like_c",  F.round((F.col("feels_like_f") - 32) * 5 / 9, 2))
+        .withColumn("wind_speed_ms", F.round(F.col("wind_speed_mph") * 0.44704, 3))
+    )
 
-    logger.info("Job complete | processed=%d skipped=%d", processed, skipped)
-    if skipped > 0:
-        logger.warning("%d records skipped due to validation errors", skipped)
+    # ── Write Parquet ─────────────────────────────────────────────────────────
+    # Parquet + Snappy: ~10x smaller than JSON, vectorised reads in Athena,
+    # partition pruning eliminates unneeded files from every query.
+    output_path = f"s3://{processed_bucket}/weather"
+    (
+        processed_df.write
+                    .mode("append")
+                    .option("compression", "snappy")
+                    .partitionBy("year", "month", "day", "hour")
+                    .parquet(output_path)
+    )
+
+    logger.info(f"Parquet written | path={output_path}")
+
+    # ── Update Glue Data Catalog ──────────────────────────────────────────────
+    # DynamicFrame → catalog write keeps Athena table schema in sync without
+    # waiting for the next crawler run.
+    dynamic_frame = DynamicFrame.fromDF(processed_df, glue_context, "processed")
+    glue_context.write_dynamic_frame.from_catalog(
+        frame=dynamic_frame,
+        database=CATALOG_DATABASE,
+        table_name=CATALOG_TABLE,
+        additional_options={
+            "partitionKeys": ["year", "month", "day", "hour"],
+            "enableUpdateCatalog": True,
+        },
+    )
+
+    logger.info(
+        f"Job complete | processed={valid_count} skipped={invalid_count} "
+        f"catalog={CATALOG_DATABASE}.{CATALOG_TABLE}"
+    )
+    job.commit()
 
 
-if __name__ == "__main__":
-    main()
+main()
