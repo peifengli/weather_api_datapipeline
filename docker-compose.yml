@@ -33,7 +33,7 @@ x-airflow-common: &airflow-common
     AWS_SECRET_ACCESS_KEY: test
     AWS_ENDPOINT_URL: http://localstack:4566
     # Pipeline config
-    OPENWEATHER_API_KEY: ${OPENWEATHER_API_KEY:-}
+    OPENWEATHERMAP_API_KEY: ${OPENWEATHERMAP_API_KEY:-}
     S3_RAW_BUCKET: ${S3_RAW_BUCKET:-weatherdata-raw-local}
     S3_PROCESSED_BUCKET: ${S3_PROCESSED_BUCKET:-weatherdata-processed-local}
     ATHENA_DATABASE: ${ATHENA_DATABASE:-weather_db}

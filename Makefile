@@ -22,6 +22,9 @@ help: ## Show this help message
 up: ## Start the full local dev stack (Airflow + LocalStack + Superset)
 	@cp -n $(ENV_FILE).example $(ENV_FILE) 2>/dev/null || true
 	$(DOCKER_COMPOSE) up -d --build
+	@echo "Waiting for LocalStack to be ready..."
+	@until curl -sf http://localhost:4566/_localstack/health | grep -q '"s3": "running"'; do sleep 2; done
+	@$(MAKE) init-localstack
 	@echo ""
 	@echo "  Airflow UI   → http://localhost:8080  (admin/admin)"
 	@echo "  Superset     → http://localhost:8088  (admin/admin)"
