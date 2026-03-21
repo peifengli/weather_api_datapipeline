@@ -1,7 +1,8 @@
-import pytest
-from datetime import datetime, timezone
-from src.weather.models import WeatherReading, WeatherCondition
+from datetime import UTC, datetime
 
+import pytest
+
+from src.weather.models import WeatherReading
 
 SAMPLE_API_RESPONSE = {
     "coord": {"lon": -74.006, "lat": 40.7128},
@@ -69,7 +70,7 @@ class TestWeatherReading:
         assert "fetched_at" in d
 
     def test_fetched_at_defaults_to_now(self):
-        before = datetime.now(timezone.utc)
+        before = datetime.now(UTC)
         reading = WeatherReading.from_api_response(SAMPLE_API_RESPONSE, "Newark", "NJ")
-        after = datetime.now(timezone.utc)
+        after = datetime.now(UTC)
         assert before <= reading.fetched_at <= after

@@ -1,12 +1,11 @@
 import json
+from datetime import UTC, datetime
+
 import pytest
-from datetime import datetime, timezone
-from moto import mock_aws
 
-from src.storage.s3 import upload_raw, upload_batch, key_exists, raw_s3_key
+from src.storage.s3 import key_exists, raw_s3_key, upload_batch, upload_raw
 
-
-OBS_TIME = datetime(2024, 3, 21, 15, 0, 0, tzinfo=timezone.utc)
+OBS_TIME = datetime(2024, 3, 21, 15, 0, 0, tzinfo=UTC)
 RAW_BUCKET = "weatherdata-raw-test"
 PROCESSED_BUCKET = "weatherdata-processed-test"
 

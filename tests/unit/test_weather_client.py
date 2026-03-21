@@ -1,11 +1,10 @@
-import pytest
 from unittest.mock import MagicMock, patch
-from datetime import datetime, timezone
 
-from src.weather.cities import City, TRISTATE_CITIES
+import pytest
+
+from src.weather.cities import TRISTATE_CITIES, City
 from src.weather.client import WeatherClient
 from tests.unit.test_models import SAMPLE_API_RESPONSE
-
 
 STAMFORD_CT = City("Stamford", "CT", 41.0534, -73.5387)
 

@@ -1,14 +1,15 @@
 from __future__ import annotations
+
 import logging
 import time
-from datetime import datetime, timezone
+from datetime import UTC, datetime
 from typing import Any
 
 import requests
 from requests.adapters import HTTPAdapter
 from urllib3.util.retry import Retry
 
-from src.weather.cities import City, TRISTATE_CITIES
+from src.weather.cities import TRISTATE_CITIES, City
 from src.weather.models import WeatherReading
 
 logger = logging.getLogger(__name__)
@@ -37,7 +38,7 @@ class WeatherClient:
             "appid": self.api_key,
             "units": self.units,
         }
-        fetched_at = datetime.now(timezone.utc)
+        fetched_at = datetime.now(UTC)
         try:
             resp = self._session.get(f"{BASE_URL}/weather", params=params, timeout=10)
             resp.raise_for_status()

@@ -2,16 +2,11 @@
 Data quality tests for weather readings.
 These run against real or moto-mocked S3 data and validate business rules.
 """
-import json
 import pytest
-from datetime import datetime, timezone
-from moto import mock_aws
-import boto3
 
-from src.weather.models import WeatherReading
 from src.weather.cities import TRISTATE_CITIES
+from src.weather.models import WeatherReading
 from tests.unit.test_models import SAMPLE_API_RESPONSE
-
 
 VALID_STATES = {"NY", "NJ", "CT"}
 TEMP_MIN_F = -20.0
@@ -22,7 +17,8 @@ PRESSURE_MIN = 900
 PRESSURE_MAX = 1100
 
 
-def build_reading(overrides: dict = {}) -> WeatherReading:
+def build_reading(overrides: dict | None = None) -> WeatherReading:
+    overrides = overrides or {}
     data = {**SAMPLE_API_RESPONSE}
     if "main" in overrides:
         data["main"] = {**data["main"], **overrides["main"]}

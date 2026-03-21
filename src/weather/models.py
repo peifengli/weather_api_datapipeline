@@ -1,6 +1,7 @@
 from __future__ import annotations
+
 from dataclasses import dataclass, field
-from datetime import datetime, timezone
+from datetime import UTC, datetime
 from typing import Any
 
 
@@ -46,7 +47,7 @@ class WeatherReading:
         fetched_at: datetime | None = None,
     ) -> WeatherReading:
         if fetched_at is None:
-            fetched_at = datetime.now(timezone.utc)
+            fetched_at = datetime.now(UTC)
 
         main = data["main"]
         wind = data.get("wind", {})
@@ -60,7 +61,7 @@ class WeatherReading:
             lat=data["coord"]["lat"],
             lon=data["coord"]["lon"],
             fetched_at=fetched_at,
-            observed_at=datetime.fromtimestamp(data["dt"], tz=timezone.utc),
+            observed_at=datetime.fromtimestamp(data["dt"], tz=UTC),
             temp_f=main["temp"],
             feels_like_f=main["feels_like"],
             temp_min_f=main["temp_min"],
@@ -78,8 +79,8 @@ class WeatherReading:
                 description=weather["description"],
                 icon=weather["icon"],
             ),
-            sunrise=datetime.fromtimestamp(sys.get("sunrise", 0), tz=timezone.utc),
-            sunset=datetime.fromtimestamp(sys.get("sunset", 0), tz=timezone.utc),
+            sunrise=datetime.fromtimestamp(sys.get("sunrise", 0), tz=UTC),
+            sunset=datetime.fromtimestamp(sys.get("sunset", 0), tz=UTC),
             raw=data,
         )
 

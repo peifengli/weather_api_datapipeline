@@ -4,10 +4,11 @@ Fetches current weather for all tri-state cities and stores raw JSON to S3.
 Scheduled to run hourly via Airflow.
 """
 from __future__ import annotations
+
 import json
 import logging
 import sys
-from datetime import datetime, timezone
+from datetime import UTC, datetime
 
 import boto3
 
@@ -29,13 +30,14 @@ logging.basicConfig(level=logging.INFO, format="%(asctime)s %(levelname)s %(name
 logger = logging.getLogger("fetch_weather")
 
 # Add src to path so we can import project modules when running in Glue
-import os
+import os  # noqa: E402
+
 sys.path.insert(0, os.path.dirname(os.path.dirname(os.path.abspath(__file__))))
 
-from src.config import Config
-from src.weather.client import WeatherClient
-from src.weather.cities import TRISTATE_CITIES
-from src.storage.s3 import upload_batch
+from src.config import Config  # noqa: E402
+from src.storage.s3 import upload_batch  # noqa: E402
+from src.weather.cities import TRISTATE_CITIES  # noqa: E402
+from src.weather.client import WeatherClient  # noqa: E402
 
 
 def get_api_key(secret_name: str, region: str, endpoint_url: str | None) -> str:
@@ -61,7 +63,7 @@ def main() -> None:
         logger.error("No weather data fetched — aborting")
         sys.exit(1)
 
-    run_time = datetime.now(timezone.utc)
+    run_time = datetime.now(UTC)
     reading_dicts = [r.to_dict() for r in readings]
 
     keys = upload_batch(

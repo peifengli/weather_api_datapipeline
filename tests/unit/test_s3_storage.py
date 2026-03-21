@@ -1,12 +1,12 @@
 import json
+from datetime import UTC, datetime
+from unittest.mock import MagicMock, patch
+
 import pytest
-from datetime import datetime, timezone
-from unittest.mock import MagicMock, patch, call
 
-from src.storage.s3 import raw_s3_key, upload_raw, upload_batch
+from src.storage.s3 import raw_s3_key, upload_batch, upload_raw
 
-
-OBS_TIME = datetime(2024, 3, 21, 15, 0, 0, tzinfo=timezone.utc)
+OBS_TIME = datetime(2024, 3, 21, 15, 0, 0, tzinfo=UTC)
 
 
 @pytest.mark.unit
@@ -16,7 +16,7 @@ class TestS3Key:
         assert key == "weather/year=2024/month=03/day=21/hour=15/new_york_city_ny.json"
 
     def test_raw_s3_key_midnight(self):
-        midnight = datetime(2024, 1, 1, 0, 0, 0, tzinfo=timezone.utc)
+        midnight = datetime(2024, 1, 1, 0, 0, 0, tzinfo=UTC)
         key = raw_s3_key("newark_nj", midnight)
         assert "hour=00" in key
         assert "month=01" in key
@@ -28,7 +28,7 @@ class TestUploadRaw:
     def test_upload_raw_calls_put_object(self):
         mock_client = MagicMock()
         with patch("src.storage.s3._s3_client", return_value=mock_client):
-            key = upload_raw("my-bucket", "newark_nj", {"temp_f": 55.0}, OBS_TIME)
+            upload_raw("my-bucket", "newark_nj", {"temp_f": 55.0}, OBS_TIME)
 
         mock_client.put_object.assert_called_once()
         call_kwargs = mock_client.put_object.call_args[1]

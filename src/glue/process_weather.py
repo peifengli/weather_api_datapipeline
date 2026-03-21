@@ -4,10 +4,11 @@ Reads raw JSON files from S3, flattens/validates, writes processed JSON back to 
 Runs after fetch_weather completes.
 """
 from __future__ import annotations
+
 import json
 import logging
 import sys
-from datetime import datetime, timezone
+from datetime import UTC, datetime
 
 import boto3
 
@@ -19,7 +20,7 @@ try:
     )
 except Exception:
     import os
-    now = datetime.now(timezone.utc)
+    now = datetime.now(UTC)
     args = {
         "JOB_NAME": "process_weather_local",
         "S3_RAW_BUCKET": os.getenv("S3_RAW_BUCKET", "weatherdata-raw"),
@@ -31,11 +32,11 @@ except Exception:
 logging.basicConfig(level=logging.INFO, format="%(asctime)s %(levelname)s %(name)s %(message)s")
 logger = logging.getLogger("process_weather")
 
-import os
+import os  # noqa: E402
+
 sys.path.insert(0, os.path.dirname(os.path.dirname(os.path.abspath(__file__))))
 
-from src.config import Config
-
+from src.config import Config  # noqa: E402
 
 REQUIRED_FIELDS = {
     "city", "state", "country", "lat", "lon",

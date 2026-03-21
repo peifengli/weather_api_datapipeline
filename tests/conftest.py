@@ -1,5 +1,5 @@
-import os
 import pytest
+
 
 # Point boto3 at LocalStack when running integration tests locally
 @pytest.fixture(autouse=True)
