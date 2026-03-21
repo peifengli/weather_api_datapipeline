@@ -2,7 +2,7 @@ from __future__ import annotations
 
 import logging
 import time
-from datetime import UTC, datetime
+from datetime import datetime, timezone
 from typing import Any
 
 import requests
@@ -38,7 +38,7 @@ class WeatherClient:
             "appid": self.api_key,
             "units": self.units,
         }
-        fetched_at = datetime.now(UTC)
+        fetched_at = datetime.now(timezone.utc)
         try:
             resp = self._session.get(f"{BASE_URL}/weather", params=params, timeout=10)
             resp.raise_for_status()

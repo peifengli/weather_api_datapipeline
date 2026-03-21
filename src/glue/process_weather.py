@@ -9,7 +9,7 @@ from __future__ import annotations
 import json
 import logging
 import sys
-from datetime import UTC, datetime
+from datetime import datetime, timezone
 
 import boto3
 
@@ -23,7 +23,7 @@ try:
 except Exception:
     import os
 
-    now = datetime.now(UTC)
+    now = datetime.now(timezone.utc)
     args = {
         "JOB_NAME": "process_weather_local",
         "S3_RAW_BUCKET": os.getenv("S3_RAW_BUCKET", "weatherdata-raw"),

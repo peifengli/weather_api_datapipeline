@@ -9,7 +9,7 @@ from __future__ import annotations
 import json
 import logging
 import sys
-from datetime import UTC, datetime
+from datetime import datetime, timezone
 
 import boto3
 
@@ -66,7 +66,7 @@ def main() -> None:
         logger.error("No weather data fetched — aborting")
         sys.exit(1)
 
-    run_time = datetime.now(UTC)
+    run_time = datetime.now(timezone.utc)
     reading_dicts = [r.to_dict() for r in readings]
 
     keys = upload_batch(
