@@ -48,10 +48,13 @@ init-localstack: ## Bootstrap LocalStack with required AWS resources
 	$(LOCALSTACK_AWS) s3 mb s3://weatherdata-raw-local || true
 	$(LOCALSTACK_AWS) s3 mb s3://weatherdata-processed-local || true
 	$(LOCALSTACK_AWS) s3 mb s3://weatherdata-athena-results-local || true
-	@echo "Creating Secrets Manager entry..."
+	@echo "Creating/updating Secrets Manager entry..."
 	$(LOCALSTACK_AWS) secretsmanager create-secret \
 	  --name openweather_api_key \
-	  --secret-string '{"OPENWEATHERMAP_API_KEY":"$(OPENWEATHERMAP_API_KEY)"}' || true
+	  --secret-string '{"OPENWEATHERMAP_API_KEY":"$(OPENWEATHERMAP_API_KEY)"}' 2>/dev/null || \
+	$(LOCALSTACK_AWS) secretsmanager put-secret-value \
+	  --secret-id openweather_api_key \
+	  --secret-string '{"OPENWEATHERMAP_API_KEY":"$(OPENWEATHERMAP_API_KEY)"}'
 	@echo "LocalStack initialized."
 
 # ── Testing ────────────────────────────────────────────────────────────────────
