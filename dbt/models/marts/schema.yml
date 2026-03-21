@@ -1,0 +1,24 @@
+version: 2
+
+models:
+  - name: weather_current
+    description: "Latest weather reading per city"
+    columns:
+      - name: city_name
+        tests: [not_null, unique]
+      - name: temp_f
+        tests: [not_null]
+      - name: observed_at
+        tests: [not_null]
+
+  - name: weather_hourly_summary
+    description: "Hourly aggregated weather metrics per city"
+    columns:
+      - name: city_name
+        tests: [not_null]
+      - name: state_code
+        tests: [not_null]
+      - name: observed_hour
+        tests: [not_null]
+      - name: avg_temp_f
+        tests: [not_null]

@@ -1,0 +1,15 @@
+weather_pipeline:
+  target: "{{ env_var('DBT_TARGET', 'dev') }}"
+  outputs:
+    dev:
+      type: duckdb
+      path: /tmp/weather_dev.duckdb
+      threads: 4
+    prod:
+      type: athena
+      region_name: "{{ env_var('AWS_DEFAULT_REGION', 'us-east-1') }}"
+      s3_staging_dir: "s3://{{ env_var('S3_ATHENA_RESULTS_BUCKET', 'weatherdata-athena-results') }}/dbt/"
+      database: "{{ env_var('ATHENA_DATABASE', 'weather_db') }}"
+      schema: analytics
+      threads: 4
+      work_group: "{{ env_var('ATHENA_WORKGROUP', 'primary') }}"

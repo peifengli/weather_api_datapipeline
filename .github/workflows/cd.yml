@@ -1,0 +1,132 @@
+name: CD
+
+on:
+  push:
+    branches: [main]
+
+concurrency:
+  group: cd-${{ github.ref }}
+  cancel-in-progress: false   # Never cancel an in-flight deployment
+
+env:
+  PYTHON_VERSION: "3.11"
+  AWS_DEFAULT_REGION: us-east-1
+
+jobs:
+  # ── Gate: all tests must pass before ANY deployment ───────────────────────
+  run-all-tests:
+    name: Full Test Suite (gate)
+    uses: ./.github/workflows/ci.yml
+
+  # ── Deploy to dev ──────────────────────────────────────────────────────────
+  deploy-dev:
+    name: Deploy → dev
+    runs-on: ubuntu-latest
+    needs: run-all-tests
+    environment: dev
+    permissions:
+      id-token: write
+      contents: read
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: Configure AWS credentials (dev)
+        uses: aws-actions/configure-aws-credentials@v4
+        with:
+          role-to-assume: ${{ secrets.AWS_DEPLOY_ROLE_DEV }}
+          aws-region: ${{ env.AWS_DEFAULT_REGION }}
+
+      - uses: hashicorp/setup-terraform@v3
+        with:
+          terraform_version: "1.7.5"
+
+      - name: Terraform init (dev)
+        working-directory: terraform/environments/dev
+        run: terraform init
+
+      - name: Terraform plan (dev)
+        working-directory: terraform/environments/dev
+        run: terraform plan -out=tfplan
+
+      - name: Terraform apply (dev)
+        working-directory: terraform/environments/dev
+        run: terraform apply -auto-approve tfplan
+
+      - name: Package src/ for Glue
+        run: |
+          cd src && zip -r ../src.zip . && cd ..
+          aws s3 cp src.zip s3://weatherdata-raw-dev/glue-scripts/src.zip
+
+  # ── Smoke test against dev ─────────────────────────────────────────────────
+  smoke-test-dev:
+    name: Smoke Tests → dev
+    runs-on: ubuntu-latest
+    needs: deploy-dev
+    environment: dev
+    permissions:
+      id-token: write
+      contents: read
+    steps:
+      - uses: actions/checkout@v4
+
+      - uses: actions/setup-python@v5
+        with:
+          python-version: ${{ env.PYTHON_VERSION }}
+          cache: pip
+
+      - run: pip install -r requirements.txt -r requirements-dev.txt
+
+      - name: Configure AWS credentials (dev)
+        uses: aws-actions/configure-aws-credentials@v4
+        with:
+          role-to-assume: ${{ secrets.AWS_DEPLOY_ROLE_DEV }}
+          aws-region: ${{ env.AWS_DEFAULT_REGION }}
+
+      - name: Run smoke tests against dev
+        env:
+          ENVIRONMENT: dev
+          S3_RAW_BUCKET: weatherdata-raw-dev
+          S3_PROCESSED_BUCKET: weatherdata-processed-dev
+          ATHENA_DATABASE: weatherdata_dev
+        run: pytest tests/integration/ tests/data_quality/ -v --tb=short -m "integration or data_quality"
+
+  # ── Manual approval gate before prod ──────────────────────────────────────
+  # Requires a GitHub Environment named "prod" with required reviewers configured
+
+  deploy-prod:
+    name: Deploy → prod
+    runs-on: ubuntu-latest
+    needs: smoke-test-dev
+    environment: prod           # <-- manual approval required in GitHub Environments settings
+    permissions:
+      id-token: write
+      contents: read
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: Configure AWS credentials (prod)
+        uses: aws-actions/configure-aws-credentials@v4
+        with:
+          role-to-assume: ${{ secrets.AWS_DEPLOY_ROLE_PROD }}
+          aws-region: ${{ env.AWS_DEFAULT_REGION }}
+
+      - uses: hashicorp/setup-terraform@v3
+        with:
+          terraform_version: "1.7.5"
+
+      - name: Terraform init (prod)
+        working-directory: terraform/environments/prod
+        run: terraform init
+
+      - name: Terraform plan (prod)
+        working-directory: terraform/environments/prod
+        run: terraform plan -out=tfplan
+
+      - name: Terraform apply (prod)
+        working-directory: terraform/environments/prod
+        run: terraform apply -auto-approve tfplan
+
+      - name: Package src/ for Glue
+        run: |
+          cd src && zip -r ../src.zip . && cd ..
+          aws s3 cp src.zip s3://weatherdata-raw-prod/glue-scripts/src.zip

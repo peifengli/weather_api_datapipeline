@@ -1,0 +1,38 @@
+version: 2
+
+sources:
+  - name: weather_raw
+    database: weather_db
+    schema: default
+    tables:
+      - name: weather
+        description: "Raw weather readings ingested from OpenWeatherMap API"
+        columns:
+          - name: city
+            description: "City name"
+          - name: state
+            description: "Two-letter state code (NY, NJ, CT)"
+          - name: observed_at
+            description: "Observation timestamp (UTC)"
+
+models:
+  - name: stg_weather_raw
+    description: "Cleaned and cast staging layer from raw weather source"
+    columns:
+      - name: city_name
+        tests: [not_null]
+      - name: state_code
+        tests:
+          - not_null
+          - accepted_values:
+              values: ["NY", "NJ", "CT"]
+      - name: temp_f
+        tests: [not_null]
+      - name: humidity_pct
+        tests:
+          - not_null
+          - dbt_utils.accepted_range:
+              min_value: 0
+              max_value: 100
+      - name: observed_at
+        tests: [not_null]
