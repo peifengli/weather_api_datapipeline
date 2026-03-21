@@ -68,3 +68,19 @@ resource "aws_secretsmanager_secret" "weather_api_key" {
   name = "weather-api-key-${local.environment}"
   tags = local.tags
 }
+
+# Import blocks — bring pre-existing resources into state without recreating them
+import {
+  to = module.athena.aws_athena_database.weather
+  id = "weatherdata_prod"
+}
+
+import {
+  to = module.glue.aws_glue_job.fetch_weather
+  id = "fetch_weather"
+}
+
+import {
+  to = module.glue.aws_glue_job.process_weather
+  id = "process_weather"
+}

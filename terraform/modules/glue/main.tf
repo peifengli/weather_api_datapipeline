@@ -4,7 +4,7 @@ resource "aws_glue_catalog_database" "weather" {
 
 
 resource "aws_glue_job" "fetch_weather" {
-  name         = "fetch_weather"
+  name         = "fetch_weather_${var.environment}"
   role_arn     = var.glue_role_arn
   glue_version = "4.0"
   command {
@@ -24,7 +24,7 @@ resource "aws_glue_job" "fetch_weather" {
 }
 
 resource "aws_glue_job" "process_weather" {
-  name         = "process_weather"
+  name         = "process_weather_${var.environment}"
   role_arn     = var.glue_role_arn
   glue_version = "4.0"
   command {
