@@ -62,7 +62,9 @@ def upload_batch(
     return uploaded
 
 
-def key_exists(bucket: str, key: str, endpoint_url: str | None = None, region: str = "us-east-1") -> bool:
+def key_exists(
+    bucket: str, key: str, endpoint_url: str | None = None, region: str = "us-east-1"
+) -> bool:
     client = _s3_client(endpoint_url, region)
     try:
         client.head_object(Bucket=bucket, Key=key)

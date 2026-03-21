@@ -2,6 +2,7 @@
 Data quality tests for weather readings.
 These run against real or moto-mocked S3 data and validate business rules.
 """
+
 import pytest
 
 from src.weather.cities import TRISTATE_CITIES
@@ -35,9 +36,9 @@ class TestWeatherReadingQuality:
         assert self.sample.state in VALID_STATES
 
     def test_temperature_in_realistic_range(self):
-        assert TEMP_MIN_F <= self.sample.temp_f <= TEMP_MAX_F, (
-            f"temp_f {self.sample.temp_f} outside [{TEMP_MIN_F}, {TEMP_MAX_F}]"
-        )
+        assert (
+            TEMP_MIN_F <= self.sample.temp_f <= TEMP_MAX_F
+        ), f"temp_f {self.sample.temp_f} outside [{TEMP_MIN_F}, {TEMP_MAX_F}]"
 
     def test_feels_like_near_temp(self):
         diff = abs(self.sample.feels_like_f - self.sample.temp_f)
@@ -50,9 +51,9 @@ class TestWeatherReadingQuality:
         assert HUMIDITY_MIN <= self.sample.humidity_pct <= HUMIDITY_MAX
 
     def test_pressure_in_range(self):
-        assert PRESSURE_MIN <= self.sample.pressure_hpa <= PRESSURE_MAX, (
-            f"pressure {self.sample.pressure_hpa} outside [{PRESSURE_MIN}, {PRESSURE_MAX}]"
-        )
+        assert (
+            PRESSURE_MIN <= self.sample.pressure_hpa <= PRESSURE_MAX
+        ), f"pressure {self.sample.pressure_hpa} outside [{PRESSURE_MIN}, {PRESSURE_MAX}]"
 
     def test_wind_speed_non_negative(self):
         assert self.sample.wind_speed_mph >= 0
@@ -75,8 +76,14 @@ class TestWeatherReadingQuality:
     def test_to_dict_has_all_required_keys(self):
         d = self.sample.to_dict()
         required = {
-            "city", "state", "temp_f", "humidity_pct", "pressure_hpa",
-            "wind_speed_mph", "observed_at", "fetched_at",
+            "city",
+            "state",
+            "temp_f",
+            "humidity_pct",
+            "pressure_hpa",
+            "wind_speed_mph",
+            "observed_at",
+            "fetched_at",
             "condition_main",
         }
         missing = required - set(d.keys())

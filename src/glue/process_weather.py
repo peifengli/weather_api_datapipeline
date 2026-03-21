@@ -3,6 +3,7 @@ AWS Glue Python Shell Job: process_weather
 Reads raw JSON files from S3, flattens/validates, writes processed JSON back to S3.
 Runs after fetch_weather completes.
 """
+
 from __future__ import annotations
 
 import json
@@ -14,12 +15,14 @@ import boto3
 
 try:
     from awsglue.utils import getResolvedOptions  # type: ignore[import]
+
     args = getResolvedOptions(
         sys.argv,
         ["JOB_NAME", "S3_RAW_BUCKET", "S3_PROCESSED_BUCKET", "ENVIRONMENT", "RUN_HOUR"],
     )
 except Exception:
     import os
+
     now = datetime.now(UTC)
     args = {
         "JOB_NAME": "process_weather_local",
@@ -39,13 +42,24 @@ sys.path.insert(0, os.path.dirname(os.path.dirname(os.path.abspath(__file__))))
 from src.config import Config  # noqa: E402
 
 REQUIRED_FIELDS = {
-    "city", "state", "country", "lat", "lon",
-    "fetched_at", "observed_at",
-    "temp_f", "feels_like_f", "temp_min_f", "temp_max_f",
-    "humidity_pct", "pressure_hpa",
-    "wind_speed_mph", "wind_deg",
+    "city",
+    "state",
+    "country",
+    "lat",
+    "lon",
+    "fetched_at",
+    "observed_at",
+    "temp_f",
+    "feels_like_f",
+    "temp_min_f",
+    "temp_max_f",
+    "humidity_pct",
+    "pressure_hpa",
+    "wind_speed_mph",
+    "wind_deg",
     "clouds_pct",
-    "condition_main", "condition_description",
+    "condition_main",
+    "condition_description",
 }
 
 

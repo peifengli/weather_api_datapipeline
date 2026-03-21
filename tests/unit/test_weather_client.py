@@ -29,6 +29,7 @@ class TestWeatherClient:
 
     def test_fetch_current_http_error_returns_none(self):
         import requests
+
         client = self._mock_client()
         mock_resp = MagicMock()
         mock_resp.raise_for_status.side_effect = requests.HTTPError("401 Unauthorized")
@@ -40,6 +41,7 @@ class TestWeatherClient:
 
     def test_fetch_current_request_exception_returns_none(self):
         import requests
+
         client = self._mock_client()
 
         with patch.object(client._session, "get", side_effect=requests.ConnectionError("timeout")):
@@ -49,6 +51,7 @@ class TestWeatherClient:
 
     def test_fetch_all_tristate_skips_failures(self):
         import requests
+
         client = self._mock_client()
         cities = [TRISTATE_CITIES[0], TRISTATE_CITIES[1]]
 

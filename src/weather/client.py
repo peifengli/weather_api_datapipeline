@@ -60,7 +60,9 @@ class WeatherClient:
             reading = self.fetch_current(city)
             if reading:
                 results.append(reading)
-                logger.info("Fetched weather for %s, %s: %.1f°F", city.name, city.state, reading.temp_f)
+                logger.info(
+                    "Fetched weather for %s, %s: %.1f°F", city.name, city.state, reading.temp_f
+                )
             else:
                 logger.warning("Skipping %s, %s — no data returned", city.name, city.state)
             time.sleep(request_delay)

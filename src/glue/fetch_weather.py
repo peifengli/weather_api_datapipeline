@@ -3,6 +3,7 @@ AWS Glue Python Shell Job: fetch_weather
 Fetches current weather for all tri-state cities and stores raw JSON to S3.
 Scheduled to run hourly via Airflow.
 """
+
 from __future__ import annotations
 
 import json
@@ -15,10 +16,12 @@ import boto3
 # Glue jobs receive --JOB_NAME and custom args via getResolvedOptions
 try:
     from awsglue.utils import getResolvedOptions  # type: ignore[import]
+
     args = getResolvedOptions(sys.argv, ["JOB_NAME", "S3_RAW_BUCKET", "SECRET_NAME", "ENVIRONMENT"])
 except Exception:
     # Fallback for local testing
     import os
+
     args = {
         "JOB_NAME": "fetch_weather_local",
         "S3_RAW_BUCKET": os.getenv("S3_RAW_BUCKET", "weatherdata-raw"),
