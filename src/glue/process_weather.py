@@ -26,8 +26,14 @@ from pyspark.sql import functions as F
 
 args = getResolvedOptions(
     sys.argv,
-    ["JOB_NAME", "S3_RAW_BUCKET", "S3_PROCESSED_BUCKET", "ENVIRONMENT", "RUN_HOUR"],
+    ["JOB_NAME", "S3_RAW_BUCKET", "S3_PROCESSED_BUCKET", "ENVIRONMENT"],
 )
+# RUN_HOUR is optional — when triggered by Glue Workflow after fetch_weather,
+# it defaults to the current UTC hour so the two jobs always process the same window.
+try:
+    args["RUN_HOUR"] = getResolvedOptions(sys.argv, ["RUN_HOUR"])["RUN_HOUR"]
+except Exception:
+    args["RUN_HOUR"] = datetime.now(timezone.utc).strftime("%Y-%m-%dT%H")
 
 sc = SparkContext()
 glue_context = GlueContext(sc)
