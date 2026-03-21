@@ -28,7 +28,7 @@ jobs:
         with:
           python-version: ${{ env.PYTHON_VERSION }}
           cache: pip
-      - run: pip install ruff black mypy boto3-stubs[s3,secretsmanager,glue] types-requests
+      - run: pip install ruff black==25.1.0 mypy boto3-stubs[s3,secretsmanager,glue] types-requests
       - run: ruff check src/ tests/
       - run: black --check src/ tests/
       - run: mypy src/ --ignore-missing-imports
