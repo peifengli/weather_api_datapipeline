@@ -74,13 +74,3 @@ import {
   to = module.athena.aws_athena_database.weather
   id = "weatherdata_prod"
 }
-
-import {
-  to = module.glue.aws_glue_job.fetch_weather
-  id = "fetch_weather"
-}
-
-import {
-  to = module.glue.aws_glue_job.process_weather
-  id = "process_weather"
-}
