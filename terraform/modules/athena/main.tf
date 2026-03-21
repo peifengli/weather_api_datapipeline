@@ -15,6 +15,7 @@ resource "aws_athena_workgroup" "weather" {
 }
 
 resource "aws_athena_database" "weather" {
-  name   = "${var.project}_${var.environment}"
-  bucket = var.athena_results_bucket
+  name          = "${var.project}_${var.environment}"
+  bucket        = var.athena_results_bucket
+  force_destroy = true
 }
