@@ -5,6 +5,7 @@ on:
     branches: [main]
   push:
     branches: [main]
+  workflow_call:  # allows cd.yml to call this as a reusable workflow
 
 concurrency:
   group: ${{ github.workflow }}-${{ github.ref }}
