@@ -104,8 +104,8 @@ resource "aws_lambda_function" "trigger" {
 
   environment {
     variables = {
-      ENVIRONMENT        = var.environment
-      AWS_DEFAULT_REGION = var.region
+      ENVIRONMENT = var.environment
+      REGION      = var.region
     }
   }
 

@@ -19,7 +19,7 @@ def handler(event: dict, context: object) -> dict:
     environment = os.environ["ENVIRONMENT"]
     workflow_name = f"weather-pipeline-{environment}"
 
-    glue = boto3.client("glue", region_name=os.environ.get("AWS_DEFAULT_REGION", "us-east-1"))
+    glue = boto3.client("glue", region_name=os.environ.get("REGION", "us-east-1"))
 
     response = glue.start_workflow_run(Name=workflow_name)
     run_id = response["RunId"]
