@@ -2,19 +2,6 @@ resource "aws_glue_catalog_database" "weather" {
   name = "${var.project}_${var.environment}"
 }
 
-resource "aws_s3_object" "fetch_script" {
-  bucket = var.scripts_bucket
-  key    = "glue-scripts/fetch_weather.py"
-  source = "${path.root}/../../src/glue/fetch_weather.py"
-  etag   = filemd5("${path.root}/../../src/glue/fetch_weather.py")
-}
-
-resource "aws_s3_object" "process_script" {
-  bucket = var.scripts_bucket
-  key    = "glue-scripts/process_weather.py"
-  source = "${path.root}/../../src/glue/process_weather.py"
-  etag   = filemd5("${path.root}/../../src/glue/process_weather.py")
-}
 
 resource "aws_glue_job" "fetch_weather" {
   name         = "fetch_weather"
