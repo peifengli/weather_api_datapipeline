@@ -1,0 +1,30 @@
+variable "project" {
+  description = "Project name prefix for all resources"
+  type        = string
+}
+
+variable "environment" {
+  description = "Deployment environment (dev, prod)"
+  type        = string
+}
+
+variable "region" {
+  description = "AWS region"
+  type        = string
+}
+
+variable "fetch_job_name" {
+  description = "Name of the Glue fetch job"
+  type        = string
+}
+
+variable "process_job_name" {
+  description = "Name of the Glue process job"
+  type        = string
+}
+
+variable "tags" {
+  description = "Tags to apply to all resources"
+  type        = map(string)
+  default     = {}
+}

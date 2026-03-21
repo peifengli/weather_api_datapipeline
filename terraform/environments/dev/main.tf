@@ -64,6 +64,16 @@ module "athena" {
   tags                  = local.tags
 }
 
+module "scheduler" {
+  source           = "../../modules/scheduler"
+  project          = local.project
+  environment      = local.environment
+  region           = var.aws_region
+  fetch_job_name   = module.glue.fetch_job_name
+  process_job_name = module.glue.process_job_name
+  tags             = local.tags
+}
+
 resource "aws_secretsmanager_secret" "weather_api_key" {
   name = "weather-api-key-${local.environment}"
   tags = local.tags
