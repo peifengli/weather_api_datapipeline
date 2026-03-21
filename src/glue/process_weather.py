@@ -158,36 +158,27 @@ def main() -> None:
         .withColumn("wind_speed_ms", F.round(F.col("wind_speed_mph") * 0.44704, 3))
     )
 
-    # ── Write Parquet ─────────────────────────────────────────────────────────
-    # Parquet + Snappy: ~10x smaller than JSON, vectorised reads in Athena,
-    # partition pruning eliminates unneeded files from every query.
+    # ── Write Parquet + register/update Glue Data Catalog ────────────────────
+    # getSink creates the catalog table on first run and updates schema on
+    # subsequent runs — unlike write_dynamic_frame.from_catalog which requires
+    # the table to already exist (throws EntityNotFoundException otherwise).
     output_path = f"s3://{processed_bucket}/weather"
-    (
-        processed_df.write.mode("append")
-        .option("compression", "snappy")
-        .partitionBy("year", "month", "day", "hour")
-        .parquet(output_path)
-    )
-
-    logger.info(f"Parquet written | path={output_path}")
-
-    # ── Update Glue Data Catalog ──────────────────────────────────────────────
-    # DynamicFrame → catalog write keeps Athena table schema in sync without
-    # waiting for the next crawler run.
     dynamic_frame = DynamicFrame.fromDF(processed_df, glue_context, "processed")
-    glue_context.write_dynamic_frame.from_catalog(
-        frame=dynamic_frame,
-        database=CATALOG_DATABASE,
-        table_name=CATALOG_TABLE,
-        additional_options={
-            "partitionKeys": ["year", "month", "day", "hour"],
-            "enableUpdateCatalog": True,
-        },
+
+    sink = glue_context.getSink(
+        connection_type="s3",
+        path=output_path,
+        enableUpdateCatalog=True,
+        updateBehavior="UPDATE_IN_DATABASE",
+        partitionKeys=["year", "month", "day", "hour"],
     )
+    sink.setCatalogInfo(catalogDatabase=CATALOG_DATABASE, catalogTableName=CATALOG_TABLE)
+    sink.setFormat("glueparquet", compression="snappy")
+    sink.writeFrame(dynamic_frame)
 
     logger.info(
         f"Job complete | processed={valid_count} skipped={invalid_count} "
-        f"catalog={CATALOG_DATABASE}.{CATALOG_TABLE}"
+        f"path={output_path} catalog={CATALOG_DATABASE}.{CATALOG_TABLE}"
     )
     job.commit()
 
