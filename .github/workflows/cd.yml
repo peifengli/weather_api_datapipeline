@@ -52,10 +52,16 @@ jobs:
         working-directory: terraform/environments/dev
         run: terraform apply -auto-approve tfplan
 
-      - name: Package src/ for Glue
+      - name: Upload Glue scripts to S3
         run: |
+          aws s3 cp src/glue/fetch_weather.py   s3://weatherdata-raw-dev/glue-scripts/fetch_weather.py
+          aws s3 cp src/glue/process_weather.py s3://weatherdata-raw-dev/glue-scripts/process_weather.py
           cd src && zip -r ../src.zip . && cd ..
           aws s3 cp src.zip s3://weatherdata-raw-dev/glue-scripts/src.zip
+
+      - name: Sync DAGs to MWAA (dev)
+        run: |
+          aws s3 sync airflow/dags/ s3://weatherdata-mwaa-dev/dags/ --delete
 
   # ── Smoke test against dev ─────────────────────────────────────────────────
   smoke-test-dev:
@@ -126,7 +132,13 @@ jobs:
         working-directory: terraform/environments/prod
         run: terraform apply -auto-approve tfplan
 
-      - name: Package src/ for Glue
+      - name: Upload Glue scripts to S3
         run: |
+          aws s3 cp src/glue/fetch_weather.py   s3://weatherdata-raw-prod/glue-scripts/fetch_weather.py
+          aws s3 cp src/glue/process_weather.py s3://weatherdata-raw-prod/glue-scripts/process_weather.py
           cd src && zip -r ../src.zip . && cd ..
           aws s3 cp src.zip s3://weatherdata-raw-prod/glue-scripts/src.zip
+
+      - name: Sync DAGs to MWAA (prod)
+        run: |
+          aws s3 sync airflow/dags/ s3://weatherdata-mwaa-prod/dags/ --delete
