@@ -9,7 +9,7 @@ resource "aws_athena_workgroup" "weather" {
     }
     enforce_workgroup_configuration    = true
     publish_cloudwatch_metrics_enabled = true
-    bytes_scanned_cutoff_per_query     = 1073741824  # 1 GB safety limit
+    bytes_scanned_cutoff_per_query     = 1073741824 # 1 GB safety limit
   }
   tags = var.tags
 }

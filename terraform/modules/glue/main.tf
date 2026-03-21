@@ -26,14 +26,14 @@ resource "aws_glue_job" "fetch_weather" {
     script_location = "s3://${var.scripts_bucket}/glue-scripts/fetch_weather.py"
   }
   default_arguments = {
-    "--S3_RAW_BUCKET" = var.s3_raw_bucket
-    "--SECRET_NAME"   = var.secret_name
-    "--ENVIRONMENT"   = var.environment
-    "--extra-py-files" = "s3://${var.scripts_bucket}/glue-scripts/src.zip"
+    "--S3_RAW_BUCKET"       = var.s3_raw_bucket
+    "--SECRET_NAME"         = var.secret_name
+    "--ENVIRONMENT"         = var.environment
+    "--extra-py-files"      = "s3://${var.scripts_bucket}/glue-scripts/src.zip"
     "--job-bookmark-option" = "job-bookmark-disable"
   }
-  max_capacity = 0.0625  # 1/16 DPU (cheapest Python shell)
-  tags = var.tags
+  max_capacity = 0.0625 # 1/16 DPU (cheapest Python shell)
+  tags         = var.tags
 }
 
 resource "aws_glue_job" "process_weather" {
@@ -53,7 +53,7 @@ resource "aws_glue_job" "process_weather" {
     "--job-bookmark-option" = "job-bookmark-disable"
   }
   max_capacity = 0.0625
-  tags = var.tags
+  tags         = var.tags
 }
 
 resource "aws_glue_crawler" "weather" {
@@ -63,6 +63,6 @@ resource "aws_glue_crawler" "weather" {
   s3_target {
     path = "s3://${var.s3_processed_bucket}/weather/"
   }
-  schedule = "cron(10 * * * ? *)"  # 10 minutes past every hour
+  schedule = "cron(10 * * * ? *)" # 10 minutes past every hour
   tags     = var.tags
 }
