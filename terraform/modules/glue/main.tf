@@ -6,10 +6,10 @@ resource "aws_glue_catalog_database" "weather" {
 
 locals {
   spark_defaults = {
-    "--enable-metrics"            = ""
+    "--enable-metrics"                   = ""
     "--enable-continuous-cloudwatch-log" = "true"
-    "--job-bookmark-option"       = "job-bookmark-disable"
-    "--conf"                      = "spark.sql.parquet.compression.codec=snappy"
+    "--job-bookmark-option"              = "job-bookmark-disable"
+    "--conf"                             = "spark.sql.parquet.compression.codec=snappy"
   }
 }
 
@@ -27,7 +27,7 @@ resource "aws_glue_job" "fetch_weather" {
   }
 
   # G.1X = 4 vCPU / 16 GB per worker; 2 workers = 1 driver + 1 executor
-  worker_type       = "G.1X"
+  worker_type       = "G.025X"
   number_of_workers = 2
 
   default_arguments = merge(local.spark_defaults, {
@@ -52,7 +52,7 @@ resource "aws_glue_job" "process_weather" {
     script_location = "s3://${var.scripts_bucket}/glue-scripts/process_weather.py"
   }
 
-  worker_type       = "G.1X"
+  worker_type       = "G.025X"
   number_of_workers = 2
 
   default_arguments = merge(local.spark_defaults, {

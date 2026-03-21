@@ -111,7 +111,7 @@ def _fetch_city(city: tuple, api_key: str) -> dict | None:
                 sys_data.get("sunset", 0), tz=timezone.utc
             ).isoformat(),
         }
-    except Exception as exc:
+    except Exception:
         # Log on driver after collect; returning None lets the pipeline continue
         return None
 
