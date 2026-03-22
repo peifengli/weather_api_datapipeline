@@ -393,7 +393,6 @@ def load_hourly():
                    AVG(humidity_pct)  AS avg_humidity_pct,
                    AVG(pressure_hpa)  AS avg_pressure_hpa,
                    AVG(wind_speed_mph) AS avg_wind_speed_mph,
-                   MAX(wind_gust_mph)  AS max_wind_gust_mph,
                    AVG(clouds_pct)    AS avg_clouds_pct,
                    MODE(condition_main) AS dominant_condition,
                    COUNT(*)           AS reading_count
@@ -854,7 +853,7 @@ def render_hourly_detail(df) -> None:
                     "min_temp_f": "Min Temp (°F)", "max_temp_f": "Max Temp (°F)",
                     "avg_feels_like_f": "Feels Like (°F)", "avg_humidity_pct": "Humidity (%)",
                     "avg_pressure_hpa": "Pressure (hPa)", "avg_wind_speed_mph": "Wind (mph)",
-                    "max_wind_gust_mph": "Gust (mph)", "avg_clouds_pct": "Clouds (%)",
+                    "avg_clouds_pct": "Clouds (%)",
                     "dominant_condition": "Condition", "reading_count": "Readings",
                 }),
                 use_container_width=True,
