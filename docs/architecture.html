@@ -1,0 +1,653 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="UTF-8"/>
+<meta name="viewport" content="width=device-width, initial-scale=1.0"/>
+<title>Tri-State Weather Pipeline — Interactive Architecture</title>
+<style>
+  /* ── Reset & base ──────────────────────────────────────────────────────── */
+  *, *::before, *::after { box-sizing: border-box; margin: 0; padding: 0; }
+  :root {
+    --bg:        #0d1117;
+    --surface:   #161b22;
+    --border:    #30363d;
+    --text:      #e6edf3;
+    --muted:     #8b949e;
+    --blue:      #58a6ff;
+    --green:     #3fb950;
+    --yellow:    #d29922;
+    --orange:    #f78166;
+    --purple:    #bc8cff;
+    --teal:      #39d353;
+    --gold:      #e3b341;
+    --red:       #ff7b72;
+    --radius:    12px;
+    --card-w:    130px;
+    --card-h:    80px;
+    --gap:       70px;
+  }
+  html, body { height: 100%; }
+  body {
+    background: var(--bg);
+    color: var(--text);
+    font-family: 'Segoe UI', system-ui, -apple-system, sans-serif;
+    min-height: 100vh;
+    overflow-x: hidden;
+  }
+
+  /* ── Header ────────────────────────────────────────────────────────────── */
+  header {
+    text-align: center;
+    padding: 32px 24px 16px;
+  }
+  header h1 {
+    font-size: 1.6rem;
+    font-weight: 700;
+    background: linear-gradient(135deg, var(--blue) 0%, var(--purple) 100%);
+    -webkit-background-clip: text;
+    -webkit-text-fill-color: transparent;
+    background-clip: text;
+    letter-spacing: -0.02em;
+  }
+  header p {
+    color: var(--muted);
+    font-size: 0.85rem;
+    margin-top: 6px;
+  }
+
+  /* ── Main canvas ───────────────────────────────────────────────────────── */
+  .canvas-wrap {
+    position: relative;
+    width: 100%;
+    overflow-x: auto;
+    padding: 24px 40px 60px;
+  }
+  .canvas {
+    position: relative;
+    min-width: 1100px;
+    height: 580px;
+    margin: 0 auto;
+  }
+
+  /* ── Node cards ────────────────────────────────────────────────────────── */
+  .node {
+    position: absolute;
+    width: var(--card-w);
+    height: var(--card-h);
+    background: var(--surface);
+    border: 1.5px solid var(--border);
+    border-radius: var(--radius);
+    display: flex;
+    flex-direction: column;
+    align-items: center;
+    justify-content: center;
+    gap: 4px;
+    cursor: pointer;
+    transition: transform 0.2s ease, box-shadow 0.2s ease, border-color 0.2s ease;
+    z-index: 10;
+    user-select: none;
+  }
+  .node:hover {
+    transform: translateY(-4px) scale(1.04);
+    z-index: 20;
+  }
+  .node .icon  { font-size: 22px; line-height: 1; }
+  .node .title { font-size: 11px; font-weight: 600; color: var(--text); text-align: center; }
+  .node .sub   { font-size: 9.5px; color: var(--muted); text-align: center; }
+
+  /* Accent borders + glow per layer */
+  .layer-api    { border-color: var(--green);  }
+  .layer-api:hover    { box-shadow: 0 0 24px rgba(63,185,80,0.45);  border-color: var(--green); }
+  .layer-orch   { border-color: var(--yellow); }
+  .layer-orch:hover   { box-shadow: 0 0 24px rgba(210,153,34,0.45); border-color: var(--yellow); }
+  .layer-ingest { border-color: var(--orange); }
+  .layer-ingest:hover { box-shadow: 0 0 24px rgba(247,129,102,0.45);border-color: var(--orange); }
+  .layer-store  { border-color: var(--blue);   }
+  .layer-store:hover  { box-shadow: 0 0 24px rgba(88,166,255,0.45); border-color: var(--blue); }
+  .layer-proc   { border-color: var(--purple); }
+  .layer-proc:hover   { box-shadow: 0 0 24px rgba(188,140,255,0.45);border-color: var(--purple); }
+  .layer-serve  { border-color: var(--teal);   }
+  .layer-serve:hover  { box-shadow: 0 0 24px rgba(57,211,83,0.45);  border-color: var(--teal); }
+  .layer-obs    { border-color: var(--gold);   }
+  .layer-obs:hover    { box-shadow: 0 0 24px rgba(227,179,65,0.45); border-color: var(--gold); }
+  .layer-cicd   { border-color: var(--red);    }
+  .layer-cicd:hover   { box-shadow: 0 0 24px rgba(255,123,114,0.45);border-color: var(--red); }
+
+  /* ── SVG arrows overlay ────────────────────────────────────────────────── */
+  .arrows {
+    position: absolute;
+    inset: 0;
+    width: 100%;
+    height: 100%;
+    pointer-events: none;
+    z-index: 5;
+    overflow: visible;
+  }
+
+  /* Animated flow dash */
+  @keyframes flowDash {
+    from { stroke-dashoffset: 48; }
+    to   { stroke-dashoffset: 0;  }
+  }
+  .flow-line {
+    fill: none;
+    stroke-width: 1.8;
+    stroke-dasharray: 6 5;
+    opacity: 0.6;
+  }
+  .fl-api    { stroke: var(--green);  animation: flowDash 1.8s linear infinite; }
+  .fl-orch   { stroke: var(--yellow); animation: flowDash 2.2s linear infinite; }
+  .fl-ingest { stroke: var(--orange); animation: flowDash 1.6s linear infinite; animation-delay: 0.4s; }
+  .fl-store  { stroke: var(--blue);   animation: flowDash 1.9s linear infinite; animation-delay: 0.7s; }
+  .fl-proc   { stroke: var(--purple); animation: flowDash 2.0s linear infinite; animation-delay: 1.0s; }
+  .fl-serve  { stroke: var(--teal);   animation: flowDash 2.1s linear infinite; animation-delay: 1.3s; }
+  .fl-cicd   { stroke: var(--red);    animation: flowDash 2.8s linear infinite; animation-delay: 0.2s; }
+
+  /* Arrow heads */
+  marker path { }
+
+  /* ── Cluster labels ────────────────────────────────────────────────────── */
+  .cluster {
+    position: absolute;
+    border: 1px dashed var(--border);
+    border-radius: 14px;
+    z-index: 2;
+  }
+  .cluster-label {
+    position: absolute;
+    font-size: 9.5px;
+    color: var(--muted);
+    letter-spacing: 0.06em;
+    text-transform: uppercase;
+    font-weight: 600;
+    top: -12px;
+    left: 12px;
+    background: var(--bg);
+    padding: 0 4px;
+  }
+
+  /* ── Tooltip ───────────────────────────────────────────────────────────── */
+  #tooltip {
+    position: fixed;
+    display: none;
+    max-width: 260px;
+    background: rgba(22,27,34,0.96);
+    border: 1px solid var(--border);
+    border-radius: 10px;
+    padding: 12px 14px;
+    font-size: 12px;
+    line-height: 1.5;
+    z-index: 1000;
+    pointer-events: none;
+    backdrop-filter: blur(10px);
+    box-shadow: 0 8px 32px rgba(0,0,0,0.6);
+  }
+  #tooltip h3 { font-size: 13px; color: var(--blue); margin-bottom: 6px; }
+  #tooltip .t-row { display: flex; gap: 6px; margin-bottom: 3px; }
+  #tooltip .t-key { color: var(--muted); min-width: 55px; font-size: 11px; }
+  #tooltip .t-val { color: var(--text);  font-size: 11px; }
+  #tooltip .cost  { color: var(--teal);  font-size: 10px; margin-top: 6px; font-style: italic; }
+
+  /* ── Legend ─────────────────────────────────────────────────────────────── */
+  .legend {
+    display: flex;
+    flex-wrap: wrap;
+    gap: 12px 24px;
+    justify-content: center;
+    padding: 16px 40px;
+    border-top: 1px solid var(--border);
+    font-size: 11px;
+    color: var(--muted);
+  }
+  .legend-item { display: flex; align-items: center; gap: 6px; }
+  .legend-dot  { width: 10px; height: 10px; border-radius: 50%; }
+
+  /* ── Interview section ─────────────────────────────────────────────────── */
+  .interview {
+    max-width: 900px;
+    margin: 0 auto;
+    padding: 32px 24px 48px;
+  }
+  .interview h2 {
+    font-size: 1.2rem;
+    color: var(--blue);
+    border-bottom: 1px solid var(--border);
+    padding-bottom: 8px;
+    margin-bottom: 20px;
+    margin-top: 36px;
+  }
+  .interview h3 { font-size: 1rem; color: var(--text); margin: 20px 0 10px; }
+  .interview p, .interview li { font-size: 0.88rem; color: var(--muted); line-height: 1.7; }
+  .interview ul { padding-left: 20px; }
+  .interview table {
+    width: 100%;
+    border-collapse: collapse;
+    font-size: 0.85rem;
+    margin-bottom: 16px;
+  }
+  .interview th {
+    text-align: left;
+    padding: 8px 12px;
+    background: var(--surface);
+    color: var(--blue);
+    border: 1px solid var(--border);
+    font-size: 0.82rem;
+    text-transform: uppercase;
+    letter-spacing: 0.05em;
+  }
+  .interview td {
+    padding: 8px 12px;
+    border: 1px solid var(--border);
+    color: var(--muted);
+    vertical-align: top;
+  }
+  .interview td:first-child { color: var(--text); font-weight: 600; }
+  .savings { color: var(--teal) !important; }
+</style>
+</head>
+<body>
+
+<header>
+  <h1>Tri-State Weather Data Pipeline</h1>
+  <p>19 cities · NY / NJ / CT · Refreshed every 30 minutes · AWS + ECS Fargate</p>
+</header>
+
+<!-- ══════════════════════════════════════════════════════════════════════════
+     INTERACTIVE CANVAS
+═══════════════════════════════════════════════════════════════════════════ -->
+<div class="canvas-wrap">
+<div class="canvas" id="canvas">
+
+  <!-- Cluster backgrounds -->
+  <div class="cluster" style="left:160px;top:40px;width:540px;height:370px;">
+    <span class="cluster-label">AWS Cloud — us-east-1</span>
+  </div>
+  <div class="cluster" style="left:20px;top:300px;width:130px;height:90px;">
+    <span class="cluster-label">Local Dev</span>
+  </div>
+
+  <!-- ── Nodes ──────────────────────────────────────────────────────────── -->
+
+  <!-- Col 1: External -->
+  <div class="node layer-api" id="n-owm" style="left:20px;top:60px;"
+    data-title="OpenWeatherMap API"
+    data-service="External REST API"
+    data-detail="Free tier — 19 cities, every 30 min. Returns temp, humidity, wind, sky condition as JSON."
+    data-cost="Free (1,000 calls/day limit)">
+    <span class="icon">🌦️</span>
+    <span class="title">OpenWeather</span>
+    <span class="sub">Map API</span>
+  </div>
+
+  <div class="node layer-api" id="n-airflow" style="left:20px;top:310px;"
+    data-title="Airflow (Local Dev)"
+    data-service="Docker · CeleryExecutor"
+    data-detail="Replicates the Glue ETL pipeline locally against LocalStack. DAG: weather_pipeline.py"
+    data-cost="Local only — $0">
+    <span class="icon">🌀</span>
+    <span class="title">Airflow</span>
+    <span class="sub">LocalStack</span>
+  </div>
+
+  <!-- Col 2: Orchestration -->
+  <div class="node layer-orch" id="n-eb" style="left:180px;top:60px;"
+    data-title="EventBridge Scheduler"
+    data-service="AWS EventBridge"
+    data-detail="Cron rule fires every 30 min. Invokes the Lambda trigger. Can be disabled per-env to save Glue costs."
+    data-cost="~$0.01/month (1,440 invocations/day)">
+    <span class="icon">⏱️</span>
+    <span class="title">EventBridge</span>
+    <span class="sub">30 min cron</span>
+  </div>
+
+  <div class="node layer-orch" id="n-lambda" style="left:180px;top:170px;"
+    data-title="Trigger Lambda"
+    data-service="AWS Lambda · Python 3.11"
+    data-detail="Receives EventBridge event, calls glue:StartWorkflowRun to kick off the fetch → process workflow."
+    data-cost="~$0/month (within free tier)">
+    <span class="icon">λ</span>
+    <span class="title">Lambda</span>
+    <span class="sub">Trigger</span>
+  </div>
+
+  <div class="node layer-api" id="n-secrets" style="left:180px;top:280px;"
+    data-title="Secrets Manager"
+    data-service="AWS Secrets Manager"
+    data-detail="Stores the OpenWeatherMap API key. Glue fetch_weather reads it at runtime — key never in env vars or code."
+    data-cost="~$0.40/month (1 secret)">
+    <span class="icon">🔑</span>
+    <span class="title">Secrets Mgr</span>
+    <span class="sub">API Key</span>
+  </div>
+
+  <!-- Col 3: Ingestion -->
+  <div class="node layer-ingest" id="n-fetch" style="left:340px;top:60px;"
+    data-title="fetch_weather (Glue)"
+    data-service="AWS Glue · G.1X · PySpark"
+    data-detail="Calls OpenWeatherMap for all 19 cities. Writes raw JSON to s3://weatherdata-raw-{env}/raw/year=.../city=.../"
+    data-cost="~$0.44/run (G.1X DPU × 10 min). ~$19/month at 30-min cadence.">
+    <span class="icon">⚙️</span>
+    <span class="title">fetch_weather</span>
+    <span class="sub">Glue · PySpark</span>
+  </div>
+
+  <!-- Col 4: Raw storage -->
+  <div class="node layer-store" id="n-raw" style="left:490px;top:60px;"
+    data-title="Raw S3 Bucket"
+    data-service="AWS S3 · Standard-IA lifecycle"
+    data-detail="s3://weatherdata-raw-{env}/ — raw JSON + Glue scripts. Lifecycle: Standard → IA after 30d → Glacier after 90d."
+    data-cost="~$1/month (small JSON files, lifecycle reduces cost 60–70%)">
+    <span class="icon">🪣</span>
+    <span class="title">Raw S3</span>
+    <span class="sub">JSON</span>
+  </div>
+
+  <!-- Col 4: Processing -->
+  <div class="node layer-proc" id="n-process" style="left:490px;top:180px;"
+    data-title="process_weather (Glue)"
+    data-service="AWS Glue · G.1X · PySpark"
+    data-detail="Validates and enriches raw JSON. Adds feels_like_f, heat_index, wind_chill, severity score. Writes Parquet with hive partitioning. Idempotent — overwrites partition on re-run."
+    data-cost="~$0.44/run. Same cadence as fetch. ~$19/month.">
+    <span class="icon">⚙️</span>
+    <span class="title">process_weather</span>
+    <span class="sub">Glue · PySpark</span>
+  </div>
+
+  <!-- Col 5: Processed storage -->
+  <div class="node layer-store" id="n-proc" style="left:640px;top:60px;"
+    data-title="Processed S3 Bucket"
+    data-service="AWS S3 · Parquet (hive partitioned)"
+    data-detail="s3://weatherdata-processed-{env}/processed/year=.../month=.../day=.../hour=.../ — columnar Parquet. Partitioned for Athena predicate pushdown."
+    data-cost="~$0.50/month (Parquet is 8–10× smaller than raw JSON)">
+    <span class="icon">🪣</span>
+    <span class="title">Processed S3</span>
+    <span class="sub">Parquet · hive</span>
+  </div>
+
+  <!-- Col 5: Catalog -->
+  <div class="node layer-proc" id="n-athena" style="left:640px;top:180px;"
+    data-title="Athena + Glue Catalog"
+    data-service="AWS Athena · Glue Data Catalog"
+    data-detail="Glue Crawler registers Parquet schema. Athena queries partitioned data. DBT models run against Athena in prod, DuckDB in local."
+    data-cost="~$5/TB scanned. Partition pruning cuts typical query to &lt;100 MB → &lt;$0.01/query.">
+    <span class="icon">🔍</span>
+    <span class="title">Athena</span>
+    <span class="sub">Glue Catalog</span>
+  </div>
+
+  <!-- Col 6: Serving -->
+  <div class="node layer-serve" id="n-alb" style="left:800px;top:60px;"
+    data-title="Application Load Balancer"
+    data-service="AWS ALB · HTTP :80"
+    data-detail="Terminates HTTP, forwards to ECS task on port 8501. WebSocket upgrade forwarded natively (unlike App Runner). lb_cookie sticky sessions keep WebSocket on same task. idle_timeout=3600s."
+    data-cost="~$16/month (ALB base + LCU hours)">
+    <span class="icon">⚖️</span>
+    <span class="title">ALB</span>
+    <span class="sub">WebSocket ready</span>
+  </div>
+
+  <div class="node layer-serve" id="n-ecs" style="left:800px;top:170px;"
+    data-title="ECS Fargate — Streamlit"
+    data-service="0.25 vCPU · 0.5 GB RAM · port 8501"
+    data-detail="python:3.11-slim + streamlit + duckdb + boto3 + tzdata. Reads Parquet directly from S3 via DuckDB httpfs. IAM task role grants S3 read. Health check: /_stcore/health."
+    data-cost="~$9/month (0.25 vCPU · 0.5 GB · 24×7). Switch to FARGATE_SPOT for 70% savings.">
+    <span class="icon">🐳</span>
+    <span class="title">ECS Fargate</span>
+    <span class="sub">Streamlit :8501</span>
+  </div>
+
+  <!-- Col 7: Registry + Observe -->
+  <div class="node layer-serve" id="n-ecr" style="left:950px;top:60px;"
+    data-title="ECR — Container Registry"
+    data-service="AWS ECR · MUTABLE tags"
+    data-detail="Stores :latest Streamlit image. Lifecycle policy keeps last 5 images. CD pushes on every merge to main."
+    data-cost="~$0.10/month (&lt;1 GB stored)">
+    <span class="icon">📦</span>
+    <span class="title">ECR</span>
+    <span class="sub">Docker image</span>
+  </div>
+
+  <div class="node layer-obs" id="n-cw" style="left:950px;top:170px;"
+    data-title="CloudWatch Logs"
+    data-service="AWS CloudWatch · 7-day retention"
+    data-detail="ECS task stdout/stderr via awslogs driver. Log group: /ecs/weatherdata-streamlit-prod. Useful for Streamlit startup errors and DuckDB query failures."
+    data-cost="~$0.50/month (7d retention cap)">
+    <span class="icon">📊</span>
+    <span class="title">CloudWatch</span>
+    <span class="sub">Logs · 7d</span>
+  </div>
+
+  <div class="node layer-cicd" id="n-gh" style="left:800px;top:300px;"
+    data-title="GitHub Actions CI/CD"
+    data-service="ci.yml + cd.yml"
+    data-detail="ci.yml: lint → unit tests → integration tests → data quality → terraform validate (on every PR). cd.yml: CI gate → deploy dev → smoke tests → manual approval → deploy prod (ECR push + ECS force-new-deployment)."
+    data-cost="Free tier (2,000 min/month on public repo)">
+    <span class="icon">🐙</span>
+    <span class="title">GitHub Actions</span>
+    <span class="sub">CI / CD</span>
+  </div>
+
+  <!-- ── SVG Arrow Overlay ─────────────────────────────────────────────── -->
+  <svg class="arrows" xmlns="http://www.w3.org/2000/svg">
+    <defs>
+      <marker id="ah-api"    markerWidth="8" markerHeight="8" refX="6" refY="3" orient="auto">
+        <path d="M0,0 L0,6 L8,3 z" fill="#3fb950" opacity="0.7"/>
+      </marker>
+      <marker id="ah-orch"   markerWidth="8" markerHeight="8" refX="6" refY="3" orient="auto">
+        <path d="M0,0 L0,6 L8,3 z" fill="#d29922" opacity="0.7"/>
+      </marker>
+      <marker id="ah-ingest" markerWidth="8" markerHeight="8" refX="6" refY="3" orient="auto">
+        <path d="M0,0 L0,6 L8,3 z" fill="#f78166" opacity="0.7"/>
+      </marker>
+      <marker id="ah-store"  markerWidth="8" markerHeight="8" refX="6" refY="3" orient="auto">
+        <path d="M0,0 L0,6 L8,3 z" fill="#58a6ff" opacity="0.7"/>
+      </marker>
+      <marker id="ah-proc"   markerWidth="8" markerHeight="8" refX="6" refY="3" orient="auto">
+        <path d="M0,0 L0,6 L8,3 z" fill="#bc8cff" opacity="0.7"/>
+      </marker>
+      <marker id="ah-serve"  markerWidth="8" markerHeight="8" refX="6" refY="3" orient="auto">
+        <path d="M0,0 L0,6 L8,3 z" fill="#39d353" opacity="0.7"/>
+      </marker>
+      <marker id="ah-cicd"   markerWidth="8" markerHeight="8" refX="6" refY="3" orient="auto">
+        <path d="M0,0 L0,6 L8,3 z" fill="#ff7b72" opacity="0.7"/>
+      </marker>
+    </defs>
+
+    <!-- OWM → fetch_weather -->
+    <path class="flow-line fl-api" d="M150,100 L340,100" marker-end="url(#ah-api)"/>
+
+    <!-- EventBridge → Lambda -->
+    <path class="flow-line fl-orch" d="M245,130 L245,170" marker-end="url(#ah-orch)"/>
+
+    <!-- Lambda → fetch_weather -->
+    <path class="flow-line fl-orch" d="M310,210 Q325,210 325,100 L340,100" marker-end="url(#ah-orch)"/>
+
+    <!-- Secrets → fetch_weather -->
+    <path class="flow-line fl-api" d="M310,320 Q328,320 328,120 L340,120" marker-end="url(#ah-api)"/>
+
+    <!-- fetch → Raw S3 -->
+    <path class="flow-line fl-ingest" d="M470,100 L490,100" marker-end="url(#ah-ingest)"/>
+
+    <!-- Raw S3 → process_weather -->
+    <path class="flow-line fl-store" d="M555,140 L555,180" marker-end="url(#ah-store)"/>
+
+    <!-- process_weather → Processed S3 (up-right) -->
+    <path class="flow-line fl-proc" d="M555,180 Q555,155 600,100 L640,100" marker-end="url(#ah-proc)"/>
+
+    <!-- Processed S3 → Athena -->
+    <path class="flow-line fl-proc" d="M705,140 L705,180" marker-end="url(#ah-proc)"/>
+
+    <!-- Processed S3 → ALB (data path for dashboard) -->
+    <path class="flow-line fl-store" d="M770,100 L800,100" marker-end="url(#ah-store)"/>
+
+    <!-- ALB → ECS -->
+    <path class="flow-line fl-serve" d="M865,140 L865,170" marker-end="url(#ah-serve)"/>
+
+    <!-- ECS → CloudWatch -->
+    <path class="flow-line fl-serve" d="M930,210 L950,210" marker-end="url(#ah-serve)"/>
+
+    <!-- GitHub → ECR -->
+    <path class="flow-line fl-cicd" d="M930,340 Q970,340 970,140 L970,140" marker-end="url(#ah-cicd)"/>
+
+    <!-- ECR → ECS -->
+    <path class="flow-line fl-cicd" d="M1015,130 Q1015,210 930,210" marker-end="url(#ah-cicd)"/>
+
+    <!-- Airflow → Raw S3 (local dashed) -->
+    <path class="flow-line fl-orch" style="stroke:#8b949e;stroke-dasharray:4 8;" d="M85,355 Q280,400 490,140" marker-end="url(#ah-orch)"/>
+  </svg>
+
+</div><!-- /canvas -->
+</div><!-- /canvas-wrap -->
+
+<!-- ── Legend ──────────────────────────────────────────────────────────────── -->
+<div class="legend">
+  <span class="legend-item"><span class="legend-dot" style="background:#3fb950"></span>API / Auth</span>
+  <span class="legend-item"><span class="legend-dot" style="background:#d29922"></span>Orchestration</span>
+  <span class="legend-item"><span class="legend-dot" style="background:#f78166"></span>Ingestion</span>
+  <span class="legend-item"><span class="legend-dot" style="background:#58a6ff"></span>Storage</span>
+  <span class="legend-item"><span class="legend-dot" style="background:#bc8cff"></span>Processing</span>
+  <span class="legend-item"><span class="legend-dot" style="background:#39d353"></span>Serving</span>
+  <span class="legend-item"><span class="legend-dot" style="background:#e3b341"></span>Observability</span>
+  <span class="legend-item"><span class="legend-dot" style="background:#ff7b72"></span>CI / CD</span>
+  <span class="legend-item" style="color:#8b949e;font-style:italic">↗ Hover nodes for details</span>
+</div>
+
+<!-- ══════════════════════════════════════════════════════════════════════════
+     ENGINEERING DEEP DIVE
+═══════════════════════════════════════════════════════════════════════════ -->
+<div class="interview">
+
+  <h2>Engineering Deep Dive</h2>
+
+  <h3>Cost Optimization</h3>
+  <table>
+    <tr><th>Lever</th><th>Detail</th><th class="savings">Savings</th></tr>
+    <tr>
+      <td>S3 Lifecycle Rules</td>
+      <td>Raw JSON: Standard → S3-IA after 30 d, Glacier after 90 d</td>
+      <td class="savings">60–70% on archival data</td>
+    </tr>
+    <tr>
+      <td>Athena Partition Pruning</td>
+      <td>Hive <code>year/month/day/hour</code> layout; a 24 h query scans 1/365 of annual data</td>
+      <td class="savings">Proportional to query selectivity</td>
+    </tr>
+    <tr>
+      <td>ECS Fargate Spot</td>
+      <td>Switch <code>FARGATE</code> → <code>FARGATE_SPOT</code> in task definition for non-critical workloads</td>
+      <td class="savings">~70% compute cost</td>
+    </tr>
+    <tr>
+      <td>EventBridge Cadence</td>
+      <td>30 min → 1 h halves Glue DPU invocations with minimal staleness impact</td>
+      <td class="savings">~50% Glue cost</td>
+    </tr>
+    <tr>
+      <td>DuckDB Direct Reads</td>
+      <td>Dashboard reads Parquet from S3 via <code>httpfs</code> — no Redshift, RDS, or ElasticSearch</td>
+      <td class="savings">Eliminates $50–200/month DB tier</td>
+    </tr>
+    <tr>
+      <td>Dev Schedule Disable</td>
+      <td><code>make disable-dev-scheduling</code> pauses EventBridge in dev env when prod is live</td>
+      <td class="savings">~$40/month (dev Glue runs)</td>
+    </tr>
+  </table>
+
+  <h3>Scalability Paths</h3>
+  <ul>
+    <li><strong>10× frequency (near-real-time):</strong> Replace EventBridge poll → Kinesis Data Streams; Lambda consumes stream → triggers Glue micro-batch or writes directly to Firehose → S3.</li>
+    <li><strong>Multi-region / global cities:</strong> Extend city list to any OWM-supported location; Glue Catalog federation across regions; partitioned by <code>region=</code> prefix.</li>
+    <li><strong>Snowflake migration:</strong> Snowpipe auto-ingest on S3 <code>ObjectCreated</code> events; swap Athena for Snowflake SQL; DBT profiles unchanged (DuckDB → Snowflake connector).</li>
+    <li><strong>Dashboard scale-out:</strong> ECS Service Auto Scaling (target-tracking on ALB <code>RequestCountPerTarget</code>); add ElastiCache for DuckDB query result caching.</li>
+    <li><strong>Real-time push:</strong> OpenWeatherMap Enterprise WebSocket push → Kinesis Firehose → S3 → trigger Lambda for immediate processing (eliminates polling latency entirely).</li>
+  </ul>
+
+  <h3>Failure Handling</h3>
+  <table>
+    <tr><th>Failure Point</th><th>Mitigation</th></tr>
+    <tr>
+      <td>EventBridge → Lambda miss</td>
+      <td>SQS DLQ on EventBridge rule; missed triggers accumulate for manual replay without data loss</td>
+    </tr>
+    <tr>
+      <td>Glue job error</td>
+      <td><code>--number-of-retries 2</code>; CloudWatch alarm on <code>glue.driver.aggregate.numFailedTasks &gt; 0</code> → SNS notification</td>
+    </tr>
+    <tr>
+      <td>Bad raw data from OWM</td>
+      <td>Schema validation before processing; failed records quarantined to <code>s3://.../quarantine/</code> for inspection</td>
+    </tr>
+    <tr>
+      <td>process_weather re-run</td>
+      <td>Idempotent by design — overwrites same hive partition; no duplicates regardless of how many times it runs</td>
+    </tr>
+    <tr>
+      <td>ECS task crash</td>
+      <td>ALB health check (<code>/_stcore/health</code> × 3 failures) → ECS replaces task automatically; CloudWatch logs last output</td>
+    </tr>
+    <tr>
+      <td>S3 read failure in dashboard</td>
+      <td><code>@st.cache_data(ttl=300)</code> serves stale data for up to 5 min; UI shows last-updated timestamp so users know</td>
+    </tr>
+    <tr>
+      <td>Terraform state conflict</td>
+      <td>Remote state in S3 with DynamoDB locking; CD pipeline <code>concurrency: cancel-in-progress: false</code> prevents concurrent applies</td>
+    </tr>
+  </table>
+
+  <h3>Why ECS Fargate + ALB over App Runner?</h3>
+  <ul>
+    <li><strong>WebSocket support:</strong> App Runner's ingress layer strips/mishandles the HTTP <code>Upgrade: websocket</code> header — the handshake fails silently and the server returns HTML instead of a 101 response. ALB natively forwards WebSocket upgrade headers (RFC 6455), which Streamlit requires for its bidirectional <code>_stcore/stream</code> connection.</li>
+    <li><strong>Sticky sessions:</strong> ALB <code>lb_cookie</code> stickiness ensures each browser's WebSocket and subsequent HTTP requests always reach the same ECS task — critical when running multiple replicas.</li>
+    <li><strong>Idle timeout control:</strong> ALB <code>idle_timeout = 3600</code> keeps long-lived WebSocket connections alive. App Runner has a fixed 120 s inactivity timeout.</li>
+    <li><strong>Cost at single-instance scale:</strong> ~$25/month (ALB ~$16 + Fargate ~$9) vs App Runner ~$30+/month for equivalent memory.</li>
+  </ul>
+
+</div>
+
+<!-- ── Tooltip ────────────────────────────────────────────────────────────── -->
+<div id="tooltip"></div>
+
+<script>
+  const tooltip = document.getElementById('tooltip');
+  const nodes = document.querySelectorAll('.node');
+
+  nodes.forEach(node => {
+    node.addEventListener('mouseenter', e => {
+      const title   = node.dataset.title   || '';
+      const service = node.dataset.service || '';
+      const detail  = node.dataset.detail  || '';
+      const cost    = node.dataset.cost    || '';
+
+      tooltip.innerHTML = `
+        <h3>${title}</h3>
+        <div class="t-row"><span class="t-key">Service</span><span class="t-val">${service}</span></div>
+        <div class="t-row"><span class="t-key">Purpose</span><span class="t-val">${detail}</span></div>
+        ${cost ? `<div class="cost">💰 ${cost}</div>` : ''}
+      `;
+      tooltip.style.display = 'block';
+      moveTooltip(e);
+    });
+
+    node.addEventListener('mousemove', e => moveTooltip(e));
+
+    node.addEventListener('mouseleave', () => {
+      tooltip.style.display = 'none';
+    });
+  });
+
+  function moveTooltip(e) {
+    const margin = 16;
+    const tw = tooltip.offsetWidth;
+    const th = tooltip.offsetHeight;
+    let x = e.clientX + margin;
+    let y = e.clientY + margin;
+    if (x + tw > window.innerWidth  - margin) x = e.clientX - tw - margin;
+    if (y + th > window.innerHeight - margin) y = e.clientY - th - margin;
+    tooltip.style.left = x + 'px';
+    tooltip.style.top  = y + 'px';
+  }
+</script>
+</body>
+</html>

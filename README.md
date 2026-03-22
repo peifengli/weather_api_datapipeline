@@ -30,29 +30,12 @@ Bridgeport, New Haven, Stamford, Hartford, Waterbury, Norwalk *(CT)*
 
 ## Architecture
 
-```
-OpenWeatherMap API
-        │
-        ▼
-EventBridge Scheduler (every 30 min)
-        │
-        ▼
-  AWS Lambda  ──► Glue Workflow
-                      │
-                      ├─► fetch_weather (Glue/PySpark)
-                      │        └─► s3://weatherdata-raw-{env}/
-                      │
-                      └─► process_weather (Glue/PySpark)
-                               └─► s3://weatherdata-processed-{env}/
-                                          │
-                               ┌──────────┴──────────┐
-                               ▼                     ▼
-                          DBT models          Streamlit Dashboard
-                        (Athena/DuckDB)   (ECS Fargate + ALB, prod)
-                               │                     │
-                          AWS Athena          DuckDB httpfs
-                    (SQL via Glue Catalog)   reads S3 directly
-```
+<!-- animated pipeline flow — renders with live animation on GitHub -->
+<p align="center">
+  <img src="docs/architecture.svg" alt="Tri-State Weather Pipeline Architecture" width="960"/>
+</p>
+
+> [Interactive version — hover tooltips, animated flow, dark mode glassmorphism](docs/architecture.html) · [Generate PNG with AWS icons](docs/generate_diagram.py)
 
 **Local development** mirrors production using LocalStack (mock AWS) + Airflow.
 
@@ -282,6 +265,45 @@ Deploy → prod  ← manual approval (GitHub Environment)
 | `AWS_DEPLOY_ROLE_PROD` | OIDC IAM role ARN for prod deployments |
 
 Prod deployments require a reviewer in the **prod** GitHub Environment settings.
+
+---
+
+## Engineering Deep Dive
+
+### Cost Optimization
+
+| Lever | Detail | Savings |
+|---|---|---|
+| S3 Lifecycle Rules | Raw JSON → S3-IA after 30 d, Glacier after 90 d | ~60–70% on archival data |
+| Athena Partition Pruning | Hive `year/month/day/hour` layout; a 24 h query scans 1/365 of annual data | Proportional to query selectivity |
+| ECS Fargate Spot | Switch `FARGATE` → `FARGATE_SPOT` in task definition | ~70% compute cost |
+| EventBridge Cadence | 30 min → 1 h halves Glue DPU invocations with minimal staleness impact | ~50% Glue cost |
+| DuckDB Direct Reads | Dashboard reads Parquet from S3 via `httpfs` — no Redshift, RDS, or ElasticSearch | Eliminates $50–200/month DB tier |
+| Dev Schedule Disable | `make disable-dev-scheduling` pauses EventBridge in dev env when prod is live | ~$40/month (dev Glue runs) |
+
+### Scalability Paths
+
+- **10× frequency (near-real-time):** Replace EventBridge poll → Kinesis Data Streams; Lambda consumes stream → triggers Glue micro-batch or writes directly to Firehose → S3.
+- **Multi-region / global cities:** Extend city list to any OWM-supported location; Glue Catalog federation across regions; partitioned by `region=` prefix.
+- **Snowflake migration:** Snowpipe auto-ingest on S3 `ObjectCreated` events; swap Athena for Snowflake SQL; DBT profiles unchanged (DuckDB → Snowflake connector).
+- **Dashboard scale-out:** ECS Service Auto Scaling (target-tracking on ALB `RequestCountPerTarget`); add ElastiCache for DuckDB query result caching.
+- **Real-time push:** OpenWeatherMap Enterprise WebSocket push → Kinesis Firehose → S3 → Lambda trigger (eliminates polling latency entirely).
+
+### Failure Handling
+
+| Failure Point | Mitigation |
+|---|---|
+| EventBridge → Lambda miss | SQS DLQ on EventBridge rule; missed triggers accumulate for manual replay without data loss |
+| Glue job error | `--number-of-retries 2`; CloudWatch alarm on `glue.driver.aggregate.numFailedTasks > 0` → SNS |
+| Bad raw data from OWM | Schema validation before processing; failed records quarantined to `s3://.../quarantine/` |
+| `process_weather` re-run | Idempotent — overwrites same hive partition; no duplicates regardless of how many times it runs |
+| ECS task crash | ALB health check (`/_stcore/health` × 3 failures) → ECS replaces task; CloudWatch logs capture last output |
+| S3 read failure in dashboard | `@st.cache_data(ttl=300)` serves stale data for up to 5 min; UI shows last-updated timestamp |
+| Terraform state conflict | Remote state in S3 + DynamoDB locking; CD `concurrency: cancel-in-progress: false` prevents concurrent applies |
+
+### Why ECS Fargate + ALB over App Runner?
+
+App Runner's ingress layer strips the HTTP `Upgrade: websocket` header — Streamlit's `_stcore/stream` WebSocket handshake fails silently (server returns HTML instead of `101 Switching Protocols`). ALB natively forwards WebSocket upgrades (RFC 6455), supports `lb_cookie` sticky sessions to pin each browser to the same ECS task, and allows `idle_timeout = 3600` to keep long-lived connections alive. At single-instance scale the cost is comparable (~$25/month ALB + Fargate vs ~$30/month App Runner for equivalent memory).
 
 ---
 
