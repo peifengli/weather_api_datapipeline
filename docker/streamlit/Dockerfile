@@ -16,11 +16,10 @@ RUN python -c "import duckdb; c = duckdb.connect(); c.execute('INSTALL httpfs');
 COPY app/ ./app/
 COPY scripts/ ./scripts/
 
+# Streamlit config: disable WebSocket compression (required for App Runner reverse proxy)
+RUN mkdir -p .streamlit
+COPY docker/streamlit/streamlit_config.toml .streamlit/config.toml
+
 EXPOSE 8501
 
-CMD ["streamlit", "run", "app/dashboard.py", \
-     "--server.port=8501", \
-     "--server.address=0.0.0.0", \
-     "--server.headless=true", \
-     "--server.enableCORS=false", \
-     "--server.enableXsrfProtection=false"]
+CMD ["streamlit", "run", "app/dashboard.py"]
