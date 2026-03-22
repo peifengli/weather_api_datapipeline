@@ -74,6 +74,14 @@ module "scheduler" {
   tags             = local.tags
 }
 
+module "apprunner" {
+  source      = "../../modules/apprunner"
+  project     = local.project
+  environment = local.environment
+  aws_region  = var.aws_region
+  tags        = local.tags
+}
+
 resource "aws_secretsmanager_secret" "weather_api_key" {
   name = "weather-api-key-${local.environment}"
   tags = local.tags

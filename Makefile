@@ -1,5 +1,7 @@
 .PHONY: help up down restart logs ps \
         init-localstack \
+        dashboard refresh-db \
+        down-scheduler disable-dev-scheduling enable-dev-scheduling \
         test test-unit test-integration test-quality test-dbt \
         lint format type-check \
         dbt-run dbt-test dbt-docs \
@@ -28,6 +30,7 @@ up: ## Start the full local dev stack (Airflow + LocalStack + Superset)
 	@echo ""
 	@echo "  Airflow UI   → http://localhost:8080  (admin/admin)"
 	@echo "  Superset     → http://localhost:8088  (admin/admin)"
+	@echo "  Streamlit    → http://localhost:8501"
 	@echo "  LocalStack   → http://localhost:4566"
 	@echo "  Flower       → http://localhost:5555"
 
@@ -45,6 +48,13 @@ ps: ## Show running containers
 
 LOCALSTACK_ENV := AWS_ACCESS_KEY_ID=test AWS_SECRET_ACCESS_KEY=test AWS_DEFAULT_REGION=us-east-1
 LOCALSTACK_AWS := $(LOCALSTACK_ENV) aws --endpoint-url=http://localhost:4566
+
+dashboard: ## Run the Streamlit weather dashboard locally (localhost:8501)
+	$(VENV)/bin/streamlit run app/dashboard.py \
+	  --server.port=8501 --server.address=localhost
+
+refresh-db: ## Sync S3 → DuckDB (run after new pipeline data lands)
+	$(PYTHON) scripts/s3_to_duckdb.py
 
 init-localstack: ## Bootstrap LocalStack with required AWS resources
 	@echo "Creating S3 buckets in LocalStack..."
@@ -147,6 +157,17 @@ tf-destroy-dev: ## Destroy dev infrastructure (use with caution)
 	cd terraform && terraform destroy -var-file=environments/dev.tfvars
 
 # ── Utilities ─────────────────────────────────────────────────────────────────
+
+down-scheduler: ## Stop local Airflow scheduler + worker (keep LocalStack + Streamlit running)
+	$(DOCKER_COMPOSE) stop airflow-scheduler airflow-worker flower
+
+disable-dev-scheduling: ## Disable AWS EventBridge hourly schedule in dev (stops Glue runs, saves cost)
+	cd terraform/environments/dev && \
+	  terraform apply -var="enable_scheduler=false" -auto-approve
+
+enable-dev-scheduling: ## Re-enable AWS EventBridge hourly schedule in dev
+	cd terraform/environments/dev && \
+	  terraform apply -var="enable_scheduler=true" -auto-approve
 
 clean: ## Remove build artifacts and cache files
 	find . -type d -name __pycache__ -exec rm -rf {} + 2>/dev/null || true

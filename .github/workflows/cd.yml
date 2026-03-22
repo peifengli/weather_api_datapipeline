@@ -134,3 +134,22 @@ jobs:
           aws s3 cp src/glue/process_weather.py s3://weatherdata-raw-prod/glue-scripts/process_weather.py
           cd src && zip -r ../src.zip . && cd ..
           aws s3 cp src.zip s3://weatherdata-raw-prod/glue-scripts/src.zip
+
+      - name: Capture Terraform outputs
+        id: tf-outputs
+        working-directory: terraform/environments/prod
+        run: |
+          echo "ecr_url=$(terraform output -raw streamlit_ecr_url)" >> $GITHUB_OUTPUT
+          echo "dashboard_url=$(terraform output -raw streamlit_url)"   >> $GITHUB_OUTPUT
+
+      - name: Build and push Streamlit image to ECR
+        env:
+          ECR_URL: ${{ steps.tf-outputs.outputs.ecr_url }}
+        run: |
+          aws ecr get-login-password --region ${{ env.AWS_DEFAULT_REGION }} \
+            | docker login --username AWS --password-stdin $ECR_URL
+          docker build -t $ECR_URL:latest -f docker/streamlit/Dockerfile .
+          docker push $ECR_URL:latest
+
+      - name: Print dashboard URL
+        run: echo "✅ Dashboard → ${{ steps.tf-outputs.outputs.dashboard_url }}"

@@ -201,7 +201,9 @@ services:
 
   # ── Apache Superset (visualization) ─────────────────────────────────────────
   superset:
-    image: apache/superset:3.1.0
+    build:
+      context: ./docker/superset
+      dockerfile: Dockerfile
     ports:
       - "8088:8088"
     environment:
@@ -210,6 +212,7 @@ services:
     volumes:
       - superset-data:/app/superset_home
       - ./docker/superset/superset_config.py:/app/pythonpath/superset_config.py:ro
+      - ./data:/app/data
     command:
       - sh
       - -c
@@ -224,7 +227,7 @@ services:
         superset init &&
         gunicorn \
           --bind 0.0.0.0:8088 \
-          --workers 2 \
+          --workers 1 \
           --timeout 120 \
           'superset.app:create_app()'
     healthcheck:
@@ -233,6 +236,31 @@ services:
       timeout: 10s
       retries: 5
       start_period: 60s
+    restart: unless-stopped
+
+  # ── Streamlit Weather Dashboard ──────────────────────────────────────────────
+  streamlit:
+    build:
+      context: .
+      dockerfile: docker/streamlit/Dockerfile
+    ports:
+      - "8501:8501"
+    environment:
+      DUCKDB_PATH: /app/data/weather.db
+      S3_SYNC_SCRIPT: /app/scripts/s3_to_duckdb.py
+      AWS_ENDPOINT_URL: http://localstack:4566
+      AWS_ACCESS_KEY_ID: test
+      AWS_SECRET_ACCESS_KEY: test
+      S3_PROCESSED_BUCKET: ${S3_PROCESSED_BUCKET:-weatherdata-processed-local}
+      ENVIRONMENT: local
+    volumes:
+      - ./data:/app/data:ro
+    healthcheck:
+      test: ["CMD", "curl", "-f", "http://localhost:8501/_stcore/health"]
+      interval: 30s
+      timeout: 10s
+      retries: 5
+      start_period: 30s
     restart: unless-stopped
 
 volumes:

@@ -28,3 +28,9 @@ variable "tags" {
   type        = map(string)
   default     = {}
 }
+
+variable "enabled" {
+  description = "Set to false to disable the EventBridge schedule (pauses hourly Glue runs to save cost)"
+  type        = bool
+  default     = true
+}

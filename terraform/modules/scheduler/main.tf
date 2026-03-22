@@ -148,6 +148,7 @@ resource "aws_iam_role_policy_attachment" "scheduler_invoke" {
 }
 
 resource "aws_scheduler_schedule" "hourly" {
+  count      = var.enabled ? 1 : 0
   name       = "weather-pipeline-hourly-${var.environment}"
   group_name = "default"
 

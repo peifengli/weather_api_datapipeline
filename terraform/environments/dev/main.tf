@@ -71,6 +71,7 @@ module "scheduler" {
   region           = var.aws_region
   fetch_job_name   = module.glue.fetch_job_name
   process_job_name = module.glue.process_job_name
+  enabled          = var.enable_scheduler
   tags             = local.tags
 }
 
