@@ -120,31 +120,34 @@ jobs:
         working-directory: terraform/environments/prod
         run: terraform init
 
-      # Phase 1: create ECR repo first so we have somewhere to push the image
-      - name: Create ECR repository
-        working-directory: terraform/environments/prod
-        run: terraform apply -target=module.apprunner.aws_ecr_repository.streamlit -auto-approve
-
-      # Phase 2: build and push image before App Runner service is created
-      - name: Build and push Streamlit image to ECR
-        id: ecr-push
+      # Remove any previously CREATE_FAILED App Runner service from state so
+      # Terraform recreates it cleanly rather than trying to update a broken resource
+      - name: Remove failed App Runner service from Terraform state (idempotent)
         working-directory: terraform/environments/prod
         run: |
-          ECR_URL=$(terraform output -raw streamlit_ecr_url)
-          echo "ecr_url=$ECR_URL" >> $GITHUB_OUTPUT
+          terraform state rm module.apprunner.aws_apprunner_service.streamlit 2>/dev/null || true
+
+      # Phase 1 — create ECR repo so the image has somewhere to land
+      - name: Create ECR repository
+        working-directory: terraform/environments/prod
+        run: |
+          terraform apply \
+            -target=module.apprunner.aws_ecr_repository.streamlit \
+            -auto-approve
+
+      # Phase 2 — build and push image from repo root (correct Dockerfile context)
+      - name: Build and push Streamlit image to ECR
+        run: |
+          ECR_URL=$(cd terraform/environments/prod && terraform output -raw streamlit_ecr_url)
           aws ecr get-login-password --region ${{ env.AWS_DEFAULT_REGION }} \
             | docker login --username AWS --password-stdin $ECR_URL
-          docker build -t $ECR_URL:latest -f ../../docker/streamlit/Dockerfile ../..
+          docker build -t $ECR_URL:latest -f docker/streamlit/Dockerfile .
           docker push $ECR_URL:latest
 
-      # Phase 3: full apply — App Runner service now finds the image and starts cleanly
-      - name: Terraform plan (prod)
-        working-directory: terraform/environments/prod
-        run: terraform plan -out=tfplan
-
+      # Phase 3 — full apply; App Runner service finds the image and starts cleanly
       - name: Terraform apply (prod)
         working-directory: terraform/environments/prod
-        run: terraform apply -auto-approve tfplan
+        run: terraform apply -auto-approve
 
       - name: Upload Glue scripts to S3
         run: |
