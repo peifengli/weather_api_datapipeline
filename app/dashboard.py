@@ -335,16 +335,15 @@ def _city_advisor(city_name, temp_f, feels_like_f, wind_speed_mph, condition_mai
 def _s3_conn():
     """In-memory DuckDB connection with httpfs for reading S3 directly (prod).
 
-    Uses boto3 to resolve credentials from the App Runner instance IAM role
-    (or any other credential source in the chain) and passes them explicitly
-    to DuckDB — DuckDB httpfs does not automatically use the AWS SDK chain.
+    httpfs is pre-installed in the Docker image (Dockerfile RUN step) so we
+    only LOAD it here — no network call needed at runtime.
+    Uses boto3 to resolve credentials from the App Runner instance IAM role.
     """
     import duckdb
     import boto3
     conn = duckdb.connect()
-    conn.execute("INSTALL httpfs; LOAD httpfs;")
+    conn.execute("LOAD httpfs;")
     conn.execute(f"SET s3_region='{_AWS_REGION}';")
-    # Resolve credentials from instance role / env vars / credential file
     session = boto3.Session()
     creds = session.get_credentials().get_frozen_credentials()
     conn.execute(f"SET s3_access_key_id='{creds.access_key}';")
@@ -885,7 +884,13 @@ def main() -> None:
         df_hourly = load_hourly()
         df_processed = load_processed()
     except Exception as exc:
-        st.error(f"Failed to read DuckDB: {exc}")
+        st.error(f"Failed to load data: {exc}")
+        if _ENV == "prod":
+            st.info(
+                f"**Prod config** — reading from `s3://{_S3_PROCESSED}/` "
+                f"(region: `{_AWS_REGION}`). "
+                "Check that the pipeline has run and the bucket contains data."
+            )
         return
 
     if not df_current.empty and "observed_at" in df_current.columns:
@@ -900,7 +905,13 @@ def main() -> None:
 
     hours = sorted(df_hourly["observed_hour"].dropna().unique().tolist())
     if not hours:
-        st.warning("No data in the last 24 hours. Run `make refresh-db` to sync.")
+        if _ENV == "prod":
+            st.warning(
+                f"No data found in `s3://{_S3_PROCESSED}/` in the last 24 hours. "
+                "The pipeline may not have run yet — check EventBridge + Glue job status."
+            )
+        else:
+            st.warning("No data in the last 24 hours. Run `make refresh-db` to sync.")
         return
 
     selected_cities, selected_hour = render_sidebar(df_current, hours)
