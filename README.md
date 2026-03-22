@@ -1,6 +1,30 @@
-# Tri-State Weather API Data Pipeline
+# Tri-State Weather Data Pipeline
 
-A production-grade data pipeline that fetches hourly weather data for 19 cities across New York, New Jersey, and Connecticut, processes it through AWS, and serves an interactive dashboard.
+---
+
+## Dashboard Highlights
+
+Live weather intelligence for **19 cities across New York, New Jersey, and Connecticut** — refreshed every 30 minutes, served from AWS.
+
+### What you see
+
+| Section | What it shows |
+|---|---|
+| **Weather Map** | Temperature-coloured scatter map; dot size scales with city population |
+| **Current Conditions** | Per-city cards — temp, feels-like, humidity, wind, sky condition |
+| **Regional Snapshot** | Max / min / avg KPIs across the tri-state region with hour-over-hour deltas |
+| **Temperature Tracking** | Dual-line chart (actual + feels-like) for up to 3 cities over the past 24 h |
+| **City Advisor** | Activity suggestions per city filtered by live weather severity (severe / poor / ok) — considers rain, snow, wind, humidity, and temperature |
+| **Conditions Distribution** | Horizontal bar chart of sky-condition frequency across all cities |
+| **City Comparison** | Box plot of 24 h temperature range (min / avg / max) per city |
+| **Hourly Detail** | Full raw data table, filterable by city and time |
+
+**Sidebar controls:** state filter, city multi-select, 24 h time slider with ▶ Play animation.
+
+**Cities covered:**
+New York City, Buffalo, Rochester, Yonkers, Syracuse, Albany, White Plains *(NY)* ·
+Newark, Jersey City, Paterson, Elizabeth, Edison, Trenton *(NJ)* ·
+Bridgeport, New Haven, Stamford, Hartford, Waterbury, Norwalk *(CT)*
 
 ---
 
@@ -10,27 +34,27 @@ A production-grade data pipeline that fetches hourly weather data for 19 cities 
 OpenWeatherMap API
         │
         ▼
- EventBridge Scheduler (every 15 min)
+EventBridge Scheduler (every 30 min)
         │
         ▼
   AWS Lambda  ──► Glue Workflow
                       │
-                      ├─► fetch_weather (Glue job)
+                      ├─► fetch_weather (Glue/PySpark)
                       │        └─► s3://weatherdata-raw-{env}/
                       │
-                      └─► process_weather (Glue job)
+                      └─► process_weather (Glue/PySpark)
                                └─► s3://weatherdata-processed-{env}/
                                           │
                                ┌──────────┴──────────┐
                                ▼                     ▼
-                          DBT models            Streamlit Dashboard
-                        (Athena/DuckDB)       (AWS App Runner, prod)
-                               │
-                          AWS Athena
-                    (SQL queries via Glue Catalog)
+                          DBT models          Streamlit Dashboard
+                        (Athena/DuckDB)   (ECS Fargate + ALB, prod)
+                               │                     │
+                          AWS Athena          DuckDB httpfs
+                    (SQL via Glue Catalog)   reads S3 directly
 ```
 
-**Local development** mirrors production using LocalStack (mock AWS) + Airflow for orchestration.
+**Local development** mirrors production using LocalStack (mock AWS) + Airflow.
 
 ---
 
@@ -43,7 +67,8 @@ OpenWeatherMap API
 | Storage | LocalStack S3 | AWS S3 |
 | Transformation | DBT + DuckDB | DBT + AWS Athena |
 | Secrets | LocalStack Secrets Manager | AWS Secrets Manager |
-| Dashboard | Streamlit (localhost:8501) | Streamlit on AWS App Runner |
+| Dashboard | Streamlit (localhost:8501) | Streamlit on ECS Fargate + ALB |
+| Container Registry | — | AWS ECR |
 | Infra-as-code | — | Terraform |
 | CI/CD | — | GitHub Actions |
 
@@ -53,42 +78,42 @@ OpenWeatherMap API
 
 ```
 ├── app/
-│   └── dashboard.py          # Streamlit dashboard (local + prod)
+│   └── dashboard.py              # Streamlit dashboard (local + prod)
 ├── airflow/
 │   └── dags/
-│       └── weather_pipeline.py  # Airflow DAG (local dev)
-├── dbt/                       # DBT models (staging → marts)
+│       └── weather_pipeline.py   # Airflow DAG (local dev)
+├── dbt/                          # DBT models (staging → marts)
 ├── docker/
 │   ├── airflow/Dockerfile
-│   ├── streamlit/Dockerfile
+│   ├── streamlit/Dockerfile      # python:3.11-slim + streamlit/plotly/duckdb/boto3
 │   └── superset/Dockerfile
 ├── scripts/
-│   └── s3_to_duckdb.py        # Sync S3 processed data → local DuckDB
+│   └── s3_to_duckdb.py           # Sync S3 processed data → local DuckDB
 ├── src/
 │   ├── glue/
-│   │   ├── fetch_weather.py   # Glue job: fetch from OpenWeatherMap
-│   │   └── process_weather.py # Glue job: transform raw JSON
+│   │   ├── fetch_weather.py      # Glue job: fetch from OpenWeatherMap
+│   │   └── process_weather.py    # Glue job: validate + enrich raw JSON → Parquet
 │   └── lambda/
-│       └── trigger_pipeline.py # Lambda: trigger Glue workflow
+│       └── trigger_pipeline.py   # Lambda: start Glue workflow
 ├── terraform/
 │   ├── modules/
-│   │   ├── apprunner/         # App Runner + ECR module
+│   │   ├── ecs/                  # ECS Fargate + ALB + ECR + IAM
 │   │   ├── athena/
 │   │   ├── glue/
 │   │   ├── iam/
 │   │   ├── s3/
-│   │   └── scheduler/         # EventBridge + Lambda trigger
+│   │   └── scheduler/            # EventBridge + Lambda trigger
 │   └── environments/
-│       ├── dev/               # Dev Terraform config
-│       └── prod/              # Prod Terraform config
+│       ├── dev/
+│       └── prod/
 ├── tests/
 │   ├── unit/
-│   ├── integration/           # Requires LocalStack
-│   └── data_quality/          # Great Expectations
+│   ├── integration/              # Requires LocalStack
+│   └── data_quality/
 ├── .github/workflows/
-│   ├── ci.yml                 # Lint + test on every PR
-│   └── cd.yml                 # Deploy to dev → prod on merge to main
-└── docker-compose.yml         # Full local dev stack
+│   ├── ci.yml                    # Lint + test on every PR
+│   └── cd.yml                    # Deploy dev → prod on merge to main
+└── docker-compose.yml            # Full local dev stack
 ```
 
 ---
@@ -99,35 +124,35 @@ OpenWeatherMap API
 
 - Docker + Docker Compose
 - Python 3.11
-- An [OpenWeatherMap API key](https://openweathermap.org/api) (free tier works)
+- An [OpenWeatherMap API key](https://openweathermap.org/api) (free tier)
 
 ### Setup
 
 ```bash
-# 1. Clone and enter the repo
+# 1. Clone
 git clone https://github.com/your-org/weather_api_datapipeline.git
 cd weather_api_datapipeline
 
-# 2. Copy env file and add your API key
+# 2. Add your API key
 cp .env.example .env
-# Edit .env → set OPENWEATHERMAP_API_KEY=your_key_here
+# Edit .env → OPENWEATHERMAP_API_KEY=your_key_here
 
-# 3. Create Python virtualenv (for local tools)
-python3.11 -m venv .venv
+# 3. Install Python deps (for local tooling)
+python3.11 -m venv .venv && source .venv/bin/activate
 pip install -r requirements.txt -r requirements-dev.txt
 
-# 4. Start the full local stack
+# 4. Start the full stack
 make up
 ```
 
-This starts Airflow, LocalStack (mock AWS), Superset, and Streamlit. LocalStack is auto-bootstrapped with S3 buckets and Secrets Manager entries.
+Starts Airflow, LocalStack, Superset, and Streamlit. LocalStack is auto-bootstrapped with S3 buckets and Secrets Manager.
 
 ### Local service URLs
 
 | Service | URL | Credentials |
 |---|---|---|
 | Airflow UI | http://localhost:8080 | admin / admin |
-| Streamlit Dashboard | http://localhost:8501 | — |
+| Streamlit | http://localhost:8501 | — |
 | Superset | http://localhost:8088 | admin / admin |
 | LocalStack | http://localhost:4566 | — |
 | Flower (Celery) | http://localhost:5555 | — |
@@ -135,28 +160,18 @@ This starts Airflow, LocalStack (mock AWS), Superset, and Streamlit. LocalStack 
 ### Running the pipeline locally
 
 ```bash
-# Trigger the DAG manually in Airflow UI, or:
-# In Airflow UI → DAGs → weather_pipeline → ▶ Trigger
-
-# After data lands in LocalStack S3, sync it to local DuckDB:
+# Trigger via Airflow UI → DAGs → weather_pipeline → ▶ Trigger
+# Then sync S3 data into the local DuckDB file:
 make refresh-db
 
-# The Streamlit dashboard auto-reloads from DuckDB (TTL 5 min)
-# Or open http://localhost:8501 and click "Refresh Data"
-```
-
-### Running the dashboard standalone (no Docker)
-
-```bash
-make refresh-db    # sync S3 → data/weather.db
-make dashboard     # opens http://localhost:8501
+# Dashboard auto-reloads every 5 min, or hit "Refresh Data" in the sidebar
 ```
 
 ### Stopping
 
 ```bash
-make down                  # stop everything
-make down-scheduler        # stop only Airflow scheduler/worker (keep LocalStack)
+make down               # stop everything
+make down-scheduler     # stop Airflow scheduler/worker only (keep LocalStack + Streamlit)
 ```
 
 ---
@@ -164,12 +179,10 @@ make down-scheduler        # stop only Airflow scheduler/worker (keep LocalStack
 ## Testing
 
 ```bash
-make test              # all tests (unit + integration + data quality)
+make test              # unit + integration + data quality
 make test-unit         # fast, no external deps
 make test-integration  # requires LocalStack running (make up first)
-make test-quality      # Great Expectations data quality checks
 make test-dbt          # DBT schema + data tests
-make test-all          # everything
 ```
 
 ---
@@ -188,10 +201,10 @@ make pre-commit  # all hooks
 ## DBT
 
 ```bash
-make dbt-run           # run all models (local DuckDB by default)
-make dbt-test          # run schema + data quality tests
-make dbt-docs          # generate + serve docs at http://localhost:8081
-make dbt-run-prod      # run against production Athena
+make dbt-run          # run all models (local DuckDB)
+make dbt-test         # schema + data quality tests
+make dbt-docs         # serve docs at http://localhost:8081
+make dbt-run-prod     # run against production Athena
 ```
 
 ---
@@ -201,52 +214,41 @@ make dbt-run-prod      # run against production Athena
 ### Prerequisites
 
 - Terraform >= 1.6
-- AWS CLI configured with sufficient permissions
+- AWS CLI with sufficient permissions
 - S3 bucket `weatherdata-terraform-state` (remote state backend)
 
-### Manual deploy
-
-```bash
-# Dev
-make tf-plan-dev
-make tf-apply-dev
-
-# Prod (prompts for confirmation)
-make tf-plan-prod
-make tf-apply-prod
-```
-
-### Infrastructure created per environment
+### Infrastructure per environment
 
 | Resource | Dev | Prod |
 |---|---|---|
 | S3 buckets (raw, processed, athena-results) | ✅ | ✅ |
 | Glue jobs (fetch + process) | ✅ | ✅ |
-| EventBridge scheduler (15 min) | ✅ (disableable) | ✅ |
+| EventBridge scheduler (30 min) | ✅ (disableable) | ✅ |
 | Lambda trigger | ✅ | ✅ |
 | Athena workgroup + database | ✅ | ✅ |
 | Secrets Manager (API key) | ✅ | ✅ |
-| ECR repository (Streamlit image) | — | ✅ |
-| App Runner service (dashboard) | — | ✅ |
+| ECR repository | — | ✅ |
+| ECS Fargate cluster + service | — | ✅ |
+| Application Load Balancer | — | ✅ |
 
 ### Cost saving — disable dev scheduling when prod is live
 
 ```bash
-make disable-dev-scheduling   # stops hourly Glue jobs in dev (~$0 running cost)
-make enable-dev-scheduling    # re-enable when needed
+make disable-dev-scheduling   # stop Glue runs in dev AWS environment
+make enable-dev-scheduling    # re-enable
 ```
 
 ---
 
 ## CI/CD (GitHub Actions)
 
-### On every pull request → `ci.yml`
+### On every PR → `ci.yml`
 
-1. **Lint** — Ruff + Black + MyPy
-2. **Unit tests** — pytest, no external deps
-3. **Integration tests** — pytest against mocked AWS (moto)
-4. **Data quality tests** — Great Expectations
-5. **Terraform validate** — both dev and prod environments
+1. Lint — Ruff + Black + MyPy
+2. Unit tests
+3. Integration tests (moto)
+4. Data quality tests
+5. Terraform validate (dev + prod)
 
 ### On merge to `main` → `cd.yml`
 
@@ -255,20 +257,21 @@ CI gate (all tests pass)
     │
     ▼
 Deploy → dev  (automatic)
-    │  - terraform apply
-    │  - upload Glue scripts to S3
+    │  terraform apply + upload Glue scripts to S3
     │
     ▼
 Smoke tests → dev
     │
     ▼
-Deploy → prod  ← manual approval required (GitHub Environment)
-    │  1. terraform apply -target ECR  (create repo)
-    │  2. docker build + push to ECR
-    │  3. terraform apply (full)       (App Runner picks up image)
-    │  4. upload Glue scripts to S3
+Deploy → prod  ← manual approval (GitHub Environment)
+    │  1. Destroy old App Runner resources (migration, idempotent)
+    │  2. terraform apply -target ECR   (create repo first)
+    │  3. docker build + push to ECR
+    │  4. terraform apply (full)        (ECS picks up new image)
+    │  5. ecs wait services-stable      (ALB health check passes)
+    │  6. upload Glue scripts to S3
     ▼
-✅ Dashboard live at App Runner URL
+✅ Dashboard live at ALB URL
 ```
 
 ### Required GitHub Secrets
@@ -278,43 +281,22 @@ Deploy → prod  ← manual approval required (GitHub Environment)
 | `AWS_DEPLOY_ROLE_DEV` | OIDC IAM role ARN for dev deployments |
 | `AWS_DEPLOY_ROLE_PROD` | OIDC IAM role ARN for prod deployments |
 
-Prod deployments require a reviewer configured in the **prod** GitHub Environment settings.
-
----
-
-## Dashboard Features
-
-The Streamlit dashboard covers all 19 tri-state cities:
-
-| Section | Description |
-|---|---|
-| **Weather Map** | PyDeck scatter map — colour = temperature, opacity = population |
-| **Current Conditions** | Per-city cards with temp, feels-like, humidity, wind |
-| **Regional Snapshot** | Max/min/avg temp + wind KPIs with hour-over-hour delta |
-| **Temperature Tracking** | Dual line chart (temp + feels-like) + City Advisor |
-| **City Advisor** | Seasonal activity suggestions filtered by weather severity |
-| **Conditions Distribution** | Horizontal bar chart of weather condition frequency |
-| **City Comparison** | Box plot showing temp range (min/avg/max) per city |
-| **Hourly Detail** | Expandable raw data table |
-
-The sidebar has a 24-hour time slider with ▶ Play animation and city/state filters.
+Prod deployments require a reviewer in the **prod** GitHub Environment settings.
 
 ---
 
 ## Environment Variables
 
-Copy `.env.example` to `.env`. Key variables:
+Copy `.env.example` to `.env`:
 
 ```bash
 OPENWEATHERMAP_API_KEY=   # required
-WEATHER_LAT=40.7143       # default: NYC
-WEATHER_LON=-74.006
 ENVIRONMENT=local         # local | dev | prod
 
-# S3 buckets (auto-suffixed by environment)
+# S3 (auto-suffixed by environment)
 S3_RAW_BUCKET=weatherdata-raw-local
 S3_PROCESSED_BUCKET=weatherdata-processed-local
 
 # Airflow
-AIRFLOW__CORE__FERNET_KEY=   # generate: python -c "from cryptography.fernet import Fernet; print(Fernet.generate_key().decode())"
+AIRFLOW__CORE__FERNET_KEY=   # python -c "from cryptography.fernet import Fernet; print(Fernet.generate_key().decode())"
 ```
