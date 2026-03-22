@@ -361,12 +361,13 @@ def load_current():
         df = conn.execute(f"""
             SELECT city AS city_name, state AS state_code, lat, lon,
                    temp_f, feels_like_f, humidity_pct, wind_speed_mph,
-                   condition_main, condition_description, clouds_pct, observed_at
+                   condition_main, condition_description, clouds_pct,
+                   observed_at::TIMESTAMP AS observed_at
             FROM read_parquet(
                 's3://{_S3_PROCESSED}/weather/**/*.parquet',
                 hive_partitioning=true
             )
-            QUALIFY ROW_NUMBER() OVER (PARTITION BY city ORDER BY observed_at DESC) = 1
+            QUALIFY ROW_NUMBER() OVER (PARTITION BY city ORDER BY observed_at::TIMESTAMP DESC) = 1
             ORDER BY city_name
         """).df()
         conn.close()
@@ -384,7 +385,7 @@ def load_hourly():
         conn = _s3_conn()
         df = conn.execute(f"""
             SELECT city AS city_name, state AS state_code,
-                   DATE_TRUNC('hour', observed_at) AS observed_hour,
+                   DATE_TRUNC('hour', observed_at::TIMESTAMP) AS observed_hour,
                    MIN(temp_f)        AS min_temp_f,
                    AVG(temp_f)        AS avg_temp_f,
                    MAX(temp_f)        AS max_temp_f,
@@ -421,12 +422,12 @@ def load_processed():
         df = conn.execute(f"""
             SELECT city, state, lat, lon, temp_f, feels_like_f, humidity_pct,
                    wind_speed_mph, condition_main, condition_description,
-                   clouds_pct, observed_at
+                   clouds_pct, observed_at::TIMESTAMP AS observed_at
             FROM read_parquet(
                 's3://{_S3_PROCESSED}/weather/**/*.parquet',
                 hive_partitioning=true
             )
-            ORDER BY city, observed_at
+            ORDER BY city, observed_at::TIMESTAMP
         """).df()
         conn.close()
         return df
