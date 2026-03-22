@@ -1,5 +1,5 @@
 """
-Generate docs/architecture.png using the `diagrams` library.
+Generate docs/architecture.png and docs/architecture.svg using the `diagrams` library.
 
 Requirements:
     pip install diagrams
@@ -12,18 +12,16 @@ Run:
 
 from diagrams import Diagram, Cluster, Edge
 from diagrams.aws.integration import Eventbridge
-from diagrams.aws.compute import Lambda, ECS
+from diagrams.aws.compute import Lambda, ECS, ECR
 from diagrams.aws.analytics import Glue, Athena
 from diagrams.aws.storage import S3
-from diagrams.aws.network import ALB, ElasticLoadBalancing
+from diagrams.aws.network import ALB
 from diagrams.aws.security import SecretsManager
 from diagrams.aws.management import Cloudwatch
-from diagrams.aws.devtools import Codecommit
-from diagrams.saas.github import Github
+from diagrams.onprem.vcs import Github
+from diagrams.onprem.ci import GithubActions
 from diagrams.onprem.workflow import Airflow
 from diagrams.onprem.network import Internet
-from diagrams.aws.general import General
-from diagrams.aws.compute import ECR
 
 graph_attr = {
     "fontsize": "13",
@@ -45,69 +43,78 @@ edge_attr = {
     "fontname": "Helvetica",
 }
 
-with Diagram(
-    "Tri-State Weather Pipeline",
-    show=False,
-    filename="docs/architecture",
-    direction="LR",
-    graph_attr=graph_attr,
-    node_attr=node_attr,
-    edge_attr=edge_attr,
-    curvestyle="ortho",
-):
-    owm = Internet("OpenWeatherMap\nAPI")
-    github = Github("GitHub Actions\nCI/CD")
 
-    with Cluster("AWS Cloud  (us-east-1)"):
+def build(outformat: str, filename: str) -> None:
+    with Diagram(
+        "Tri-State Weather Pipeline",
+        show=False,
+        filename=filename,
+        outformat=outformat,
+        direction="LR",
+        graph_attr=graph_attr,
+        node_attr=node_attr,
+        edge_attr=edge_attr,
+        curvestyle="ortho",
+    ):
+        owm = Internet("OpenWeatherMap\nAPI")
+        github = GithubActions("GitHub Actions\nCI/CD")
 
-        with Cluster("Security"):
-            secrets = SecretsManager("Secrets Manager\n(API Key)")
+        with Cluster("AWS Cloud  (us-east-1)"):
 
-        with Cluster("Orchestration"):
-            eb = Eventbridge("EventBridge\nScheduler\n(30 min)")
-            lam = Lambda("Trigger\nLambda")
+            with Cluster("Security"):
+                secrets = SecretsManager("Secrets Manager\n(API Key)")
 
-        with Cluster("Ingestion  ·  Glue Workflow"):
-            fetch = Glue("fetch_weather\n(PySpark)")
+            with Cluster("Orchestration"):
+                eb = Eventbridge("EventBridge\nScheduler\n(30 min)")
+                lam = Lambda("Trigger\nLambda")
 
-        with Cluster("Storage"):
-            raw = S3("Raw S3\nJSON")
-            proc = S3("Processed S3\nParquet (hive)")
+            with Cluster("Ingestion  ·  Glue Workflow"):
+                fetch = Glue("fetch_weather\n(PySpark)")
 
-        with Cluster("Processing"):
-            process = Glue("process_weather\n(PySpark)")
-            catalog = Athena("Glue Catalog\n+ Athena")
+            with Cluster("Storage"):
+                raw = S3("Raw S3\nJSON")
+                proc = S3("Processed S3\nParquet (hive)")
 
-        with Cluster("Container  Registry"):
-            ecr = ECR("ECR")
+            with Cluster("Processing"):
+                process = Glue("process_weather\n(PySpark)")
+                catalog = Athena("Glue Catalog\n+ Athena")
 
-        with Cluster("Serving  ·  ECS Fargate"):
-            alb = ALB("ALB  :80")
-            ecs = ECS("ECS Fargate\nStreamlit  :8501")
+            with Cluster("Container Registry"):
+                ecr = ECR("ECR")
 
-        with Cluster("Observability"):
-            cw = Cloudwatch("CloudWatch\nLogs  (7d)")
+            with Cluster("Serving  ·  ECS Fargate"):
+                alb = ALB("ALB  :80")
+                ecs = ECS("ECS Fargate\nStreamlit  :8501")
 
-    with Cluster("Local Dev  (Docker)"):
-        airflow = Airflow("Airflow +\nLocalStack")
+            with Cluster("Observability"):
+                cw = Cloudwatch("CloudWatch\nLogs  (7d)")
 
-    # ── Data flow ──────────────────────────────────────────────────────────
-    owm >> Edge(label="REST /weather") >> fetch
-    secrets >> Edge(style="dashed") >> fetch
+        with Cluster("Local Dev  (Docker)"):
+            airflow = Airflow("Airflow +\nLocalStack")
 
-    eb >> lam >> Edge(label="StartWorkflowRun") >> fetch
-    fetch >> raw >> process >> proc
+        # ── Data flow ──────────────────────────────────────────────────────
+        owm >> Edge(label="REST /weather") >> fetch
+        secrets >> Edge(style="dashed") >> fetch
 
-    proc >> catalog
-    proc >> Edge(label="DuckDB httpfs") >> ecs
+        eb >> lam >> Edge(label="StartWorkflowRun") >> fetch
+        fetch >> raw >> process >> proc
 
-    # ── Serving ────────────────────────────────────────────────────────────
-    alb >> ecs
-    ecs >> cw
+        proc >> catalog
+        proc >> Edge(label="DuckDB httpfs") >> ecs
 
-    # ── CI/CD ──────────────────────────────────────────────────────────────
-    github >> Edge(label="docker push") >> ecr
-    ecr >> Edge(label="pull on deploy") >> ecs
+        # ── Serving ────────────────────────────────────────────────────────
+        alb >> ecs
+        ecs >> cw
 
-    # ── Local ─────────────────────────────────────────────────────────────
-    airflow >> Edge(style="dashed", label="local only") >> raw
+        # ── CI/CD ──────────────────────────────────────────────────────────
+        github >> Edge(label="docker push") >> ecr
+        ecr >> Edge(label="pull on deploy") >> ecs
+
+        # ── Local ──────────────────────────────────────────────────────────
+        airflow >> Edge(style="dashed", label="local only") >> raw
+
+
+if __name__ == "__main__":
+    build(outformat="png", filename="docs/architecture")
+    build(outformat="svg", filename="docs/architecture_flow")
+    print("Generated: docs/architecture.png  docs/architecture_flow.svg")
