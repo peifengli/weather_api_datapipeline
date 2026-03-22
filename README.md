@@ -34,7 +34,7 @@ Bridgeport, New Haven, Stamford, Hartford, Waterbury, Norwalk *(CT)*
   <img src="docs/architecture.png" alt="Tri-State Weather Pipeline Architecture"/>
 </p>
 
-> Data flow illustration: [docs/architecture_flow.svg](docs/architecture_flow.svg)
+> Data flow illustration: [docs/architecture_flow.svg](docs/architecture.svg)
 
 **Local development** mirrors production using LocalStack (mock AWS) + Airflow.
 
