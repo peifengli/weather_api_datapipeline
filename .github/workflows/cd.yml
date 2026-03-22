@@ -120,17 +120,14 @@ jobs:
         working-directory: terraform/environments/prod
         run: terraform init
 
-      # Sync Terraform state with reality: if the App Runner service exists in AWS
-      # but not in state (e.g. after a failed previous run), import it so Terraform
-      # updates it rather than trying to create a duplicate.
-      - name: Import existing App Runner service into state (idempotent)
+      # Migration: if App Runner resources are still in state from the old setup,
+      # destroy them first — they share the ECR repo name and would conflict.
+      - name: Remove App Runner resources (migration, idempotent)
         working-directory: terraform/environments/prod
         run: |
-          SERVICE_ARN=$(aws apprunner list-services \
-            --query "ServiceSummaryList[?ServiceName=='weatherdata-streamlit-prod'].ServiceArn" \
-            --output text 2>/dev/null || echo "")
-          if [ -n "$SERVICE_ARN" ] && [ "$SERVICE_ARN" != "None" ]; then
-            terraform import module.apprunner.aws_apprunner_service.streamlit "$SERVICE_ARN" 2>/dev/null || true
+          if terraform state list 2>/dev/null | grep -q "module.apprunner"; then
+            echo "Migrating: destroying App Runner resources before ECS apply..."
+            terraform destroy -target=module.apprunner -auto-approve
           fi
 
       # Phase 1 — create ECR repo so the image has somewhere to land
@@ -138,10 +135,10 @@ jobs:
         working-directory: terraform/environments/prod
         run: |
           terraform apply \
-            -target=module.apprunner.aws_ecr_repository.streamlit \
+            -target=module.ecs.aws_ecr_repository.streamlit \
             -auto-approve
 
-      # Phase 2 — build and push image from repo root (correct Dockerfile context)
+      # Phase 2 — build and push image from repo root
       - name: Build and push Streamlit image to ECR
         run: |
           ECR_URL=$(cd terraform/environments/prod && terraform output -raw streamlit_ecr_url)
@@ -150,10 +147,23 @@ jobs:
           docker build -t $ECR_URL:latest -f docker/streamlit/Dockerfile .
           docker push $ECR_URL:latest
 
-      # Phase 3 — full apply; App Runner service finds the image and starts cleanly
+      # Phase 3 — full apply: creates ECS cluster, ALB, service
       - name: Terraform apply (prod)
         working-directory: terraform/environments/prod
         run: terraform apply -auto-approve
+
+      # Phase 4 — force ECS to pull the new :latest image we just pushed
+      - name: Force new ECS deployment
+        run: |
+          aws ecs update-service \
+            --cluster weatherdata-prod \
+            --service weatherdata-streamlit-prod \
+            --force-new-deployment \
+            --no-cli-pager
+          echo "Waiting for ECS service to stabilise..."
+          aws ecs wait services-stable \
+            --cluster weatherdata-prod \
+            --services weatherdata-streamlit-prod
 
       - name: Upload Glue scripts to S3
         run: |

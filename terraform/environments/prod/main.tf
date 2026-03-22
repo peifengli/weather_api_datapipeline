@@ -75,8 +75,8 @@ module "scheduler" {
   tags                = local.tags
 }
 
-module "apprunner" {
-  source      = "../../modules/apprunner"
+module "ecs" {
+  source      = "../../modules/ecs"
   project     = local.project
   environment = local.environment
   aws_region  = var.aws_region
