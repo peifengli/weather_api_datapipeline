@@ -34,3 +34,9 @@ variable "enabled" {
   type        = bool
   default     = true
 }
+
+variable "schedule_expression" {
+  description = "EventBridge schedule rate expression, e.g. 'rate(15 minutes)' or 'rate(30 minutes)'"
+  type        = string
+  default     = "rate(15 minutes)"
+}

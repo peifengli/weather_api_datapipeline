@@ -65,13 +65,14 @@ module "athena" {
 }
 
 module "scheduler" {
-  source           = "../../modules/scheduler"
-  project          = local.project
-  environment      = local.environment
-  region           = var.aws_region
-  fetch_job_name   = module.glue.fetch_job_name
-  process_job_name = module.glue.process_job_name
-  tags             = local.tags
+  source              = "../../modules/scheduler"
+  project             = local.project
+  environment         = local.environment
+  region              = var.aws_region
+  fetch_job_name      = module.glue.fetch_job_name
+  process_job_name    = module.glue.process_job_name
+  schedule_expression = "rate(30 minutes)"
+  tags                = local.tags
 }
 
 module "apprunner" {

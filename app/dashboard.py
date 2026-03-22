@@ -362,9 +362,9 @@ def load_current():
             SELECT city AS city_name, state AS state_code, lat, lon,
                    temp_f, feels_like_f, humidity_pct, wind_speed_mph,
                    condition_main, condition_description, clouds_pct, observed_at
-            FROM read_json(
-                's3://{_S3_PROCESSED}/weather/**/*.json',
-                format='newline_delimited', ignore_errors=true
+            FROM read_parquet(
+                's3://{_S3_PROCESSED}/weather/**/*.parquet',
+                hive_partitioning=true
             )
             QUALIFY ROW_NUMBER() OVER (PARTITION BY city ORDER BY observed_at DESC) = 1
             ORDER BY city_name
@@ -396,9 +396,9 @@ def load_hourly():
                    AVG(clouds_pct)    AS avg_clouds_pct,
                    MODE(condition_main) AS dominant_condition,
                    COUNT(*)           AS reading_count
-            FROM read_json(
-                's3://{_S3_PROCESSED}/weather/**/*.json',
-                format='newline_delimited', ignore_errors=true
+            FROM read_parquet(
+                's3://{_S3_PROCESSED}/weather/**/*.parquet',
+                hive_partitioning=true
             )
             GROUP BY city_name, state_code, observed_hour
             ORDER BY city_name, observed_hour
@@ -422,9 +422,9 @@ def load_processed():
             SELECT city, state, lat, lon, temp_f, feels_like_f, humidity_pct,
                    wind_speed_mph, condition_main, condition_description,
                    clouds_pct, observed_at
-            FROM read_json(
-                's3://{_S3_PROCESSED}/weather/**/*.json',
-                format='newline_delimited', ignore_errors=true
+            FROM read_parquet(
+                's3://{_S3_PROCESSED}/weather/**/*.parquet',
+                hive_partitioning=true
             )
             ORDER BY city, observed_at
         """).df()
