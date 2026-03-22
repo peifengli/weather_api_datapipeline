@@ -120,12 +120,18 @@ jobs:
         working-directory: terraform/environments/prod
         run: terraform init
 
-      # Remove any previously CREATE_FAILED App Runner service from state so
-      # Terraform recreates it cleanly rather than trying to update a broken resource
-      - name: Remove failed App Runner service from Terraform state (idempotent)
+      # Sync Terraform state with reality: if the App Runner service exists in AWS
+      # but not in state (e.g. after a failed previous run), import it so Terraform
+      # updates it rather than trying to create a duplicate.
+      - name: Import existing App Runner service into state (idempotent)
         working-directory: terraform/environments/prod
         run: |
-          terraform state rm module.apprunner.aws_apprunner_service.streamlit 2>/dev/null || true
+          SERVICE_ARN=$(aws apprunner list-services \
+            --query "ServiceSummaryList[?ServiceName=='weatherdata-streamlit-prod'].ServiceArn" \
+            --output text 2>/dev/null || echo "")
+          if [ -n "$SERVICE_ARN" ] && [ "$SERVICE_ARN" != "None" ]; then
+            terraform import module.apprunner.aws_apprunner_service.streamlit "$SERVICE_ARN" 2>/dev/null || true
+          fi
 
       # Phase 1 — create ECR repo so the image has somewhere to land
       - name: Create ECR repository

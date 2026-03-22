@@ -1,99 +1,121 @@
 # CLAUDE.md
 
-This file provides guidance to Claude Code (claude.ai/code) when working with code in this repository.
+This file provides guidance to Claude Code when working with this repository.
 
 ## Project Overview
 
-Weather API data pipeline that fetches data from OpenWeatherMap and processes it through AWS services (S3, Glue, Athena) with Apache Airflow orchestration and Apache Superset for visualization. Local development uses LocalStack to emulate AWS services.
+Hourly weather data pipeline for 19 tri-state cities (NY/NJ/CT). Fetches from OpenWeatherMap, processes through AWS Glue, stores in S3, transforms with DBT, and serves via a Streamlit dashboard on AWS App Runner.
 
-## Commands
-
-### Local Development
-
-```bash
-make up              # Start full local stack (Airflow + LocalStack + Superset)
-make down            # Stop all services
-make init-localstack # Bootstrap AWS resources in LocalStack
-```
-
-Local service URLs:
-- Airflow UI: http://localhost:8080 (admin/admin)
-- Superset: http://localhost:8088 (admin/admin)
-- LocalStack: http://localhost:4566
-- Flower (Celery monitor): http://localhost:5555
-
-### Testing
-
-```bash
-make test            # All tests (unit + integration + data quality)
-make test-unit       # Unit tests only (no external deps)
-make test-integration # Integration tests (requires LocalStack running)
-make test-quality    # Great Expectations data quality tests
-make test-dbt        # DBT schema + data quality tests
-make test-all        # Complete test suite
-
-# Run a single test file
-pytest tests/unit/test_foo.py -v
-# Run tests by marker
-pytest -m unit -v
-pytest -m integration -v
-```
-
-### Code Quality
-
-```bash
-make lint        # Ruff linting
-make format      # Black + Ruff formatting
-make type-check  # MyPy type checking
-make pre-commit  # Run all pre-commit hooks
-```
-
-### DBT
-
-```bash
-make dbt-run   # Execute DBT transformations
-make dbt-test  # Run DBT data quality tests
-make dbt-docs  # Generate and serve DBT documentation
-```
+**Local dev** uses LocalStack (mock AWS) + Airflow. **Production** uses real AWS services deployed via Terraform + GitHub Actions CD.
 
 ## Architecture
 
-Data flows through these layers:
-
-1. **Ingestion**: Airflow DAGs trigger AWS Glue jobs to fetch from OpenWeatherMap API; API keys stored in AWS Secrets Manager
-2. **Raw Storage**: JSON responses land in S3 (`weatherdata-raw-*` bucket)
-3. **Processing**: AWS Glue jobs transform raw JSON; DBT models run additional transformations
-4. **Processed Storage**: Transformed data in S3 (`weatherdata-processed-*` bucket)
-5. **Catalog**: AWS Glue Data Catalog maintains metadata; Athena enables SQL queries
-6. **Visualization**: Apache Superset connects to Athena for dashboards
-
-**Local stack** (docker-compose): PostgreSQL (Airflow metadata) + Redis (Celery broker) + Airflow (webserver/scheduler/worker) + Flower + LocalStack + Superset
-
-## Key Configuration
-
-Copy `.env.example` to `.env` before running locally. Required values:
-- `OPENWEATHERMAP_API_KEY` + location (lat/lon/city)
-- AWS credentials and S3 bucket names
-- Athena database and workgroup settings
-
-## Project Layout (planned)
-
 ```
-src/              # Application source code
-airflow/dags/     # Airflow DAG definitions
-airflow/plugins/  # Custom operators/hooks
-dbt/              # DBT transformation models
-terraform/        # AWS infrastructure (Glue, S3, Athena, Secrets Manager)
-tests/
-  unit/           # Fast tests, no external deps
-  integration/    # Tests against LocalStack
-  data_quality/   # Great Expectations suites
+EventBridge (15 min) → Lambda → Glue Workflow
+  fetch_weather → s3://weatherdata-raw-{env}/
+  process_weather → s3://weatherdata-processed-{env}/
+    → DBT models → Athena
+    → Streamlit dashboard (App Runner, prod) reads S3 via DuckDB httpfs
 ```
 
-## Test Markers
+Local: Airflow DAGs replicate the Glue logic using Python operators against LocalStack.
 
-Defined in `pyproject.toml`: `unit`, `integration`, `data_quality`, `slow`. Use `-m <marker>` to filter.
+## Key Commands
 
-## Python Version
+### Local stack
+```bash
+make up                    # start Airflow + LocalStack + Streamlit (port 8501)
+make down                  # stop all services
+make down-scheduler        # stop Airflow scheduler/worker only
+make refresh-db            # sync LocalStack S3 → data/weather.db (DuckDB)
+make dashboard             # run Streamlit locally at localhost:8501
+make init-localstack       # re-bootstrap S3 buckets + Secrets Manager
+```
 
-3.11 (enforced via pyproject.toml). Line length: 100.
+### Testing
+```bash
+make test                  # unit + integration + data quality
+make test-unit             # fast, no external deps
+make test-integration      # requires LocalStack running
+make test-dbt              # DBT schema + data quality tests
+```
+
+### Code quality
+```bash
+make lint / format / type-check / pre-commit
+```
+
+### DBT
+```bash
+make dbt-run               # run models (local DuckDB target)
+make dbt-run-prod          # run against production Athena
+make dbt-test / dbt-docs
+```
+
+### Dev cloud cost saving
+```bash
+make disable-dev-scheduling   # disable EventBridge in AWS dev (stops Glue runs)
+make enable-dev-scheduling    # re-enable
+```
+
+## Local Service URLs
+
+| Service | URL | Creds |
+|---|---|---|
+| Airflow | http://localhost:8080 | admin/admin |
+| Streamlit | http://localhost:8501 | — |
+| Superset | http://localhost:8088 | admin/admin |
+| LocalStack | http://localhost:4566 | — |
+
+## Project Layout
+
+```
+app/dashboard.py            # Streamlit dashboard (local + prod)
+airflow/dags/               # Airflow DAG (local dev only)
+dbt/                        # DBT models
+docker/streamlit/Dockerfile # prod image: python:3.11-slim + streamlit/plotly/duckdb/boto3
+docker/superset/Dockerfile  # custom Superset image with duckdb-engine
+scripts/s3_to_duckdb.py     # sync S3 processed data → local DuckDB
+src/glue/                   # Glue job scripts (fetch + process)
+src/lambda/                 # Lambda trigger script
+terraform/modules/          # apprunner, athena, glue, iam, s3, scheduler
+terraform/environments/     # dev/ and prod/ configs
+tests/unit|integration|data_quality/
+.github/workflows/ci.yml    # lint + test on PR
+.github/workflows/cd.yml    # deploy dev → prod on merge to main
+```
+
+## Dashboard Architecture (app/dashboard.py)
+
+- **Local** (`ENVIRONMENT=local`): reads from `data/weather.db` (DuckDB file, populated by `make refresh-db`)
+- **Prod** (`ENVIRONMENT=prod`): reads S3 directly via DuckDB httpfs using App Runner instance IAM role
+- `_s3_conn()`: sets up in-memory DuckDB with httpfs + credential chain for prod
+- `db_exists()`: returns `True` in prod (no file check needed)
+- `load_current()`, `load_hourly()`, `load_processed()`: branch on `_ENV`
+
+Key constants: `CITY_POPULATIONS` (19 cities), `CITY_ACTIVITIES` (seasonal activity advisor), `_TEMP_ANCHORS` (colour scale).
+
+## CI/CD Pipeline
+
+`ci.yml` (on PR): lint → unit tests → integration tests → data quality → terraform validate
+
+`cd.yml` (on merge to main):
+1. CI gate
+2. Deploy dev (auto): terraform apply + upload Glue scripts
+3. Smoke tests against dev
+4. Deploy prod (manual approval): ECR create → docker build/push → terraform apply full → upload Glue scripts
+
+## Terraform
+
+- Remote state: S3 bucket `weatherdata-terraform-state` (dev/ and prod/ keys)
+- Modules: `s3`, `iam`, `glue`, `athena`, `scheduler`, `apprunner`
+- `scheduler` module has `enabled` variable — set `false` in dev tfvars to pause Glue costs
+- `apprunner` module: ECR repo + lifecycle policy, instance IAM role (S3+Secrets read), access IAM role (ECR pull), App Runner service (0.25 vCPU / 0.5 GB)
+
+## Key Config
+
+- Python 3.11, line length 100
+- Test markers: `unit`, `integration`, `data_quality`, `slow`
+- DuckDB version: >=0.10.0
+- App Runner health check: `/_stcore/health` on port 8501
+- Streamlit prod flags: `--server.enableCORS=false --server.enableXsrfProtection=false` (required behind App Runner proxy)

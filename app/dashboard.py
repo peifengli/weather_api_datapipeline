@@ -333,11 +333,24 @@ def _city_advisor(city_name, temp_f, feels_like_f, wind_speed_mph, condition_mai
 
 
 def _s3_conn():
-    """In-memory DuckDB connection with httpfs for reading S3 directly (prod)."""
+    """In-memory DuckDB connection with httpfs for reading S3 directly (prod).
+
+    Uses boto3 to resolve credentials from the App Runner instance IAM role
+    (or any other credential source in the chain) and passes them explicitly
+    to DuckDB — DuckDB httpfs does not automatically use the AWS SDK chain.
+    """
     import duckdb
+    import boto3
     conn = duckdb.connect()
     conn.execute("INSTALL httpfs; LOAD httpfs;")
     conn.execute(f"SET s3_region='{_AWS_REGION}';")
+    # Resolve credentials from instance role / env vars / credential file
+    session = boto3.Session()
+    creds = session.get_credentials().get_frozen_credentials()
+    conn.execute(f"SET s3_access_key_id='{creds.access_key}';")
+    conn.execute(f"SET s3_secret_access_key='{creds.secret_key}';")
+    if creds.token:
+        conn.execute(f"SET s3_session_token='{creds.token}';")
     return conn
 
 
