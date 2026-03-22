@@ -232,9 +232,9 @@ resource "aws_ecs_task_definition" "streamlit" {
     }]
 
     environment = [
-      { name = "ENVIRONMENT",         value = var.environment },
+      { name = "ENVIRONMENT", value = var.environment },
       { name = "S3_PROCESSED_BUCKET", value = "${var.project}-processed-${var.environment}" },
-      { name = "AWS_DEFAULT_REGION",  value = var.aws_region },
+      { name = "AWS_DEFAULT_REGION", value = var.aws_region },
     ]
 
     logConfiguration = {
