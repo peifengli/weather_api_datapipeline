@@ -1,5 +1,9 @@
 FROM python:3.11-slim
 
+# Nginx handles WebSocket upgrade headers before traffic reaches Streamlit.
+# Streamlit listens on 8502 (internal); Nginx listens on 8501 (App Runner target port).
+RUN apt-get update && apt-get install -y --no-install-recommends nginx && rm -rf /var/lib/apt/lists/*
+
 WORKDIR /app
 
 RUN pip install --no-cache-dir \
@@ -16,10 +20,17 @@ RUN python -c "import duckdb; c = duckdb.connect(); c.execute('INSTALL httpfs');
 COPY app/ ./app/
 COPY scripts/ ./scripts/
 
-# Streamlit config: disable WebSocket compression (required for App Runner reverse proxy)
+# Nginx config: WebSocket-aware reverse proxy on :8501 → Streamlit on :8502
+COPY docker/streamlit/nginx.conf /etc/nginx/nginx.conf
+
+# Streamlit config: headless, CORS off, XSRF off
 RUN mkdir -p .streamlit
 COPY docker/streamlit/streamlit_config.toml .streamlit/config.toml
 
+# Entrypoint: start Streamlit in background, then Nginx in foreground
+COPY docker/streamlit/start.sh /start.sh
+RUN chmod +x /start.sh
+
 EXPOSE 8501
 
-CMD ["streamlit", "run", "app/dashboard.py"]
+CMD ["/start.sh"]
