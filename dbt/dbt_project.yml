@@ -12,6 +12,19 @@ macro-paths: ["macros"]
 target-path: "target"
 clean-targets: ["target", "dbt_packages"]
 
+on-run-start:
+  # Local-only: create the source schema + view so DuckDB can satisfy
+  # {{ source('weather_raw', 'weather') }} without Athena.
+  - >
+    {% if target.type == 'duckdb' %}
+    CREATE SCHEMA IF NOT EXISTS "default";
+    CREATE OR REPLACE VIEW "default".weather AS
+      SELECT * FROM read_json_auto(
+        's3://weatherdata-processed-local/weather/**/*.json',
+        union_by_name=true
+      );
+    {% endif %}
+
 models:
   weather_pipeline:
     staging:

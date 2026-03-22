@@ -1,6 +1,18 @@
 weather_pipeline:
   target: "{{ env_var('DBT_TARGET', 'dev') }}"
   outputs:
+    local:
+      type: duckdb
+      path: /tmp/weather_db.duckdb   # catalog name = "weather_db" (file stem)
+      threads: 4
+      extensions:
+        - httpfs
+      settings:
+        s3_endpoint: "localstack:4566"
+        s3_access_key_id: "test"
+        s3_secret_access_key: "test"
+        s3_use_ssl: false
+        s3_url_style: path
     dev:
       type: duckdb
       path: /tmp/weather_dev.duckdb
