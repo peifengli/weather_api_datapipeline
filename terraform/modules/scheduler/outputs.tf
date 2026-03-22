@@ -14,6 +14,6 @@ output "lambda_function_arn" {
 }
 
 output "schedule_name" {
-  description = "Name of the EventBridge schedule"
-  value       = aws_scheduler_schedule.hourly.name
+  description = "Name of the EventBridge schedule (empty string when scheduler is disabled)"
+  value       = var.enabled ? aws_scheduler_schedule.hourly[0].name : ""
 }
