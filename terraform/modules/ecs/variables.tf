@@ -19,3 +19,9 @@ variable "tags" {
   type        = map(string)
   default     = {}
 }
+
+variable "desired_count" {
+  description = "Number of ECS task replicas. Set to 0 to scale to zero (stops Fargate billing while preserving infra state)."
+  type        = number
+  default     = 1
+}

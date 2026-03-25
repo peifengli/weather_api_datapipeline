@@ -72,15 +72,17 @@ module "scheduler" {
   fetch_job_name      = module.glue.fetch_job_name
   process_job_name    = module.glue.process_job_name
   schedule_expression = "rate(30 minutes)"
+  enabled             = var.enable_scheduler
   tags                = local.tags
 }
 
 module "ecs" {
-  source      = "../../modules/ecs"
-  project     = local.project
-  environment = local.environment
-  aws_region  = var.aws_region
-  tags        = local.tags
+  source        = "../../modules/ecs"
+  project       = local.project
+  environment   = local.environment
+  aws_region    = var.aws_region
+  desired_count = var.ecs_desired_count
+  tags          = local.tags
 }
 
 resource "aws_secretsmanager_secret" "weather_api_key" {

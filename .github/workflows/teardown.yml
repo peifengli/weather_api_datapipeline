@@ -1,0 +1,136 @@
+name: Teardown
+
+on:
+  workflow_dispatch:
+    inputs:
+      environment:
+        description: "Target environment"
+        required: true
+        type: choice
+        options:
+          - dev
+          - prod
+      mode:
+        description: "soft_stop = disable scheduler + scale ECS to 0 (preserves infra/data). full_destroy = terraform destroy (permanent)."
+        required: true
+        type: choice
+        options:
+          - soft_stop
+          - full_destroy
+
+concurrency:
+  group: teardown-${{ github.event.inputs.environment }}
+  cancel-in-progress: false
+
+env:
+  AWS_DEFAULT_REGION: us-east-1
+  TF_VERSION: "1.7.5"
+
+jobs:
+
+  # ── Summarise what is about to happen ────────────────────────────────────────
+  validate:
+    name: Validate inputs
+    runs-on: ubuntu-latest
+    steps:
+      - name: Summarise teardown
+        run: |
+          echo "=== TEARDOWN REQUEST ==="
+          echo "Environment : ${{ github.event.inputs.environment }}"
+          echo "Mode        : ${{ github.event.inputs.mode }}"
+          echo "Triggered by: ${{ github.actor }}"
+          if [[ "${{ github.event.inputs.mode }}" == "full_destroy" ]]; then
+            echo ""
+            echo "WARNING: full_destroy will permanently delete all AWS resources."
+            echo "S3 bucket contents will also be deleted (force_destroy = true on buckets)."
+          fi
+
+  # ── Dev teardown ─────────────────────────────────────────────────────────────
+  teardown-dev:
+    name: Teardown → dev (${{ github.event.inputs.mode }})
+    runs-on: ubuntu-latest
+    needs: validate
+    if: github.event.inputs.environment == 'dev'
+    environment: dev
+    permissions:
+      id-token: write
+      contents: read
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: Configure AWS credentials (dev)
+        uses: aws-actions/configure-aws-credentials@v4
+        with:
+          role-to-assume: ${{ secrets.AWS_DEPLOY_ROLE_DEV }}
+          aws-region: ${{ env.AWS_DEFAULT_REGION }}
+
+      - uses: hashicorp/setup-terraform@v3
+        with:
+          terraform_version: ${{ env.TF_VERSION }}
+
+      - name: Terraform init (dev)
+        working-directory: terraform/environments/dev
+        run: terraform init
+
+      - name: Soft-stop dev (disable scheduler)
+        if: github.event.inputs.mode == 'soft_stop'
+        working-directory: terraform/environments/dev
+        run: |
+          terraform apply \
+            -var="enable_scheduler=false" \
+            -auto-approve
+          echo "Dev soft-stopped: EventBridge schedule disabled. S3 data and infra preserved."
+          echo "To resume: push to main or re-run the CD workflow."
+
+      - name: Full destroy dev
+        if: github.event.inputs.mode == 'full_destroy'
+        working-directory: terraform/environments/dev
+        run: |
+          terraform destroy -auto-approve
+          echo "Dev infrastructure fully destroyed."
+
+  # ── Prod teardown (requires manual approval via GitHub Environment) ──────────
+  teardown-prod:
+    name: Teardown → prod (${{ github.event.inputs.mode }})
+    runs-on: ubuntu-latest
+    needs: validate
+    if: github.event.inputs.environment == 'prod'
+    environment: prod          # triggers the required-reviewer gate
+    permissions:
+      id-token: write
+      contents: read
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: Configure AWS credentials (prod)
+        uses: aws-actions/configure-aws-credentials@v4
+        with:
+          role-to-assume: ${{ secrets.AWS_DEPLOY_ROLE_PROD }}
+          aws-region: ${{ env.AWS_DEFAULT_REGION }}
+
+      - uses: hashicorp/setup-terraform@v3
+        with:
+          terraform_version: ${{ env.TF_VERSION }}
+
+      - name: Terraform init (prod)
+        working-directory: terraform/environments/prod
+        run: terraform init
+
+      - name: Soft-stop prod (disable scheduler + scale ECS to 0)
+        if: github.event.inputs.mode == 'soft_stop'
+        working-directory: terraform/environments/prod
+        run: |
+          terraform apply \
+            -var="enable_scheduler=false" \
+            -var="ecs_desired_count=0" \
+            -auto-approve
+          echo "Prod soft-stopped: scheduler disabled, ECS scaled to 0."
+          echo "ALB, VPC, ECR, S3, and Terraform state are all preserved."
+          echo "To resume: push to main or re-run the CD workflow."
+
+      - name: Full destroy prod
+        if: github.event.inputs.mode == 'full_destroy'
+        working-directory: terraform/environments/prod
+        run: |
+          terraform destroy -auto-approve
+          echo "Prod infrastructure fully destroyed."

@@ -2,6 +2,7 @@
         init-localstack \
         dashboard refresh-db \
         down-scheduler disable-dev-scheduling enable-dev-scheduling \
+        disable-prod-scheduling teardown-dev teardown-prod \
         test test-unit test-integration test-quality test-dbt \
         lint format type-check \
         dbt-run dbt-test dbt-docs \
@@ -168,6 +169,18 @@ disable-dev-scheduling: ## Disable AWS EventBridge hourly schedule in dev (stops
 enable-dev-scheduling: ## Re-enable AWS EventBridge hourly schedule in dev
 	cd terraform/environments/dev && \
 	  terraform apply -var="enable_scheduler=true" -auto-approve
+
+disable-prod-scheduling: ## Disable AWS EventBridge hourly schedule in prod (stops Glue runs, saves cost)
+	cd terraform/environments/prod && \
+	  terraform apply -var="enable_scheduler=false" -auto-approve
+
+teardown-dev: ## Soft-stop dev: disable scheduler (preserves infra and S3 data)
+	cd terraform/environments/dev && \
+	  terraform apply -var="enable_scheduler=false" -auto-approve
+
+teardown-prod: ## Soft-stop prod: disable scheduler + scale ECS to 0 (preserves infra and S3 data)
+	cd terraform/environments/prod && \
+	  terraform apply -var="enable_scheduler=false" -var="ecs_desired_count=0" -auto-approve
 
 clean: ## Remove build artifacts and cache files
 	find . -type d -name __pycache__ -exec rm -rf {} + 2>/dev/null || true

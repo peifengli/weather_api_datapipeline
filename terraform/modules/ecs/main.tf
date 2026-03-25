@@ -256,7 +256,7 @@ resource "aws_ecs_service" "streamlit" {
   name            = "${var.project}-streamlit-${var.environment}"
   cluster         = aws_ecs_cluster.main.id
   task_definition = aws_ecs_task_definition.streamlit.arn
-  desired_count   = 1
+  desired_count   = var.desired_count
   launch_type     = "FARGATE"
 
   # Allow time for Streamlit to start before ALB health checks kick in
