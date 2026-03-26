@@ -11,7 +11,7 @@ on:
           - dev
           - prod
       mode:
-        description: "soft_stop = disable scheduler + scale ECS to 0 (preserves infra/data). full_destroy = terraform destroy (permanent)."
+        description: "soft_stop = disable scheduler + scale ECS to 0 (preserves infra/data). full_destroy = nuke everything (permanent)."
         required: true
         type: choice
         options:
@@ -41,8 +41,7 @@ jobs:
           echo "Triggered by: ${{ github.actor }}"
           if [[ "${{ github.event.inputs.mode }}" == "full_destroy" ]]; then
             echo ""
-            echo "WARNING: full_destroy will permanently delete all AWS resources."
-            echo "S3 bucket contents will also be deleted (force_destroy = true on buckets)."
+            echo "WARNING: full_destroy permanently deletes all AWS resources and S3 data."
           fi
 
   # ── Dev teardown ─────────────────────────────────────────────────────────────
@@ -82,10 +81,19 @@ jobs:
           echo "Dev soft-stopped: EventBridge schedule disabled. S3 data and infra preserved."
           echo "To resume: push to main or re-run the CD workflow."
 
-      - name: Full destroy dev
+      - name: Empty S3 buckets (dev)
+        if: github.event.inputs.mode == 'full_destroy'
+        run: |
+          for bucket in weatherdata-raw-dev weatherdata-processed-dev weatherdata-athena-results-dev; do
+            echo "Emptying s3://$bucket ..."
+            aws s3 rb s3://$bucket --force 2>/dev/null && echo "Deleted $bucket" || echo "$bucket not found or already deleted"
+          done
+
+      - name: Terraform destroy dev
         if: github.event.inputs.mode == 'full_destroy'
         working-directory: terraform/environments/dev
         run: |
+          terraform state list 2>/dev/null && echo "--- state listed above ---" || echo "State is empty or inaccessible"
           terraform destroy -auto-approve
           echo "Dev infrastructure fully destroyed."
 
@@ -128,9 +136,53 @@ jobs:
           echo "ALB, VPC, ECR, S3, and Terraform state are all preserved."
           echo "To resume: push to main or re-run the CD workflow."
 
-      - name: Full destroy prod
+      # ── full_destroy: direct AWS CLI cleanup first, then terraform destroy ──
+      # Running AWS CLI before terraform destroy means we succeed even when
+      # Terraform state is empty or out of sync with real AWS resources.
+
+      - name: Stop ECS service (prod)
+        if: github.event.inputs.mode == 'full_destroy'
+        run: |
+          aws ecs update-service \
+            --cluster weatherdata-prod \
+            --service weatherdata-streamlit-prod \
+            --desired-count 0 \
+            --no-cli-pager 2>/dev/null \
+            && echo "ECS service scaled to 0" \
+            || echo "ECS service not found or already stopped"
+          # Wait briefly for tasks to drain before ALB/cluster are destroyed
+          sleep 15
+
+      - name: Delete ECR images (prod)
+        if: github.event.inputs.mode == 'full_destroy'
+        run: |
+          IMAGE_IDS=$(aws ecr list-images \
+            --repository-name weatherdata-streamlit-prod \
+            --query 'imageIds[*]' \
+            --output json 2>/dev/null || echo "[]")
+          if [[ "$IMAGE_IDS" != "[]" && "$IMAGE_IDS" != "" ]]; then
+            aws ecr batch-delete-image \
+              --repository-name weatherdata-streamlit-prod \
+              --image-ids "$IMAGE_IDS" \
+              --no-cli-pager \
+              && echo "ECR images deleted" \
+              || echo "ECR batch-delete failed (repo may already be gone)"
+          else
+            echo "No ECR images found"
+          fi
+
+      - name: Empty S3 buckets (prod)
+        if: github.event.inputs.mode == 'full_destroy'
+        run: |
+          for bucket in weatherdata-raw-prod weatherdata-processed-prod weatherdata-athena-results-prod; do
+            echo "Emptying s3://$bucket ..."
+            aws s3 rb s3://$bucket --force 2>/dev/null && echo "Deleted $bucket" || echo "$bucket not found or already deleted"
+          done
+
+      - name: Terraform destroy prod
         if: github.event.inputs.mode == 'full_destroy'
         working-directory: terraform/environments/prod
         run: |
+          terraform state list 2>/dev/null && echo "--- state listed above ---" || echo "State is empty or inaccessible"
           terraform destroy -auto-approve
           echo "Prod infrastructure fully destroyed."

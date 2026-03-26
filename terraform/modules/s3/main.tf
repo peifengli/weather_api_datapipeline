@@ -1,16 +1,19 @@
 resource "aws_s3_bucket" "raw" {
-  bucket = "${var.project}-raw-${var.environment}"
-  tags   = var.tags
+  bucket        = "${var.project}-raw-${var.environment}"
+  force_destroy = true
+  tags          = var.tags
 }
 
 resource "aws_s3_bucket" "processed" {
-  bucket = "${var.project}-processed-${var.environment}"
-  tags   = var.tags
+  bucket        = "${var.project}-processed-${var.environment}"
+  force_destroy = true
+  tags          = var.tags
 }
 
 resource "aws_s3_bucket" "athena_results" {
-  bucket = "${var.project}-athena-results-${var.environment}"
-  tags   = var.tags
+  bucket        = "${var.project}-athena-results-${var.environment}"
+  force_destroy = true
+  tags          = var.tags
 }
 
 resource "aws_s3_bucket_versioning" "raw" {
