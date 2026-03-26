@@ -4,14 +4,15 @@ on:
   workflow_dispatch:
     inputs:
       environment:
-        description: "Target environment"
+        description: "Target environment (all = dev + prod)"
         required: true
         type: choice
         options:
           - dev
           - prod
+          - all
       mode:
-        description: "soft_stop = disable scheduler + scale ECS to 0 (preserves infra/data). full_destroy = nuke everything (permanent)."
+        description: "soft_stop = disable scheduler + scale ECS to 0 (preserves infra/data). full_destroy = delete everything (permanent)."
         required: true
         type: choice
         options:
@@ -41,7 +42,7 @@ jobs:
           echo "Triggered by: ${{ github.actor }}"
           if [[ "${{ github.event.inputs.mode }}" == "full_destroy" ]]; then
             echo ""
-            echo "WARNING: full_destroy permanently deletes all AWS resources and S3 data."
+            echo "WARNING: full_destroy permanently deletes ALL AWS resources and data."
           fi
 
   # ── Dev teardown ─────────────────────────────────────────────────────────────
@@ -49,7 +50,9 @@ jobs:
     name: Teardown → dev (${{ github.event.inputs.mode }})
     runs-on: ubuntu-latest
     needs: validate
-    if: github.event.inputs.environment == 'dev'
+    if: |
+      github.event.inputs.environment == 'dev' ||
+      github.event.inputs.environment == 'all'
     environment: dev
     permissions:
       id-token: write
@@ -75,34 +78,31 @@ jobs:
         if: github.event.inputs.mode == 'soft_stop'
         working-directory: terraform/environments/dev
         run: |
-          terraform apply \
-            -var="enable_scheduler=false" \
-            -auto-approve
+          terraform apply -var="enable_scheduler=false" -auto-approve
           echo "Dev soft-stopped: EventBridge schedule disabled. S3 data and infra preserved."
           echo "To resume: push to main or re-run the CD workflow."
 
-      - name: Empty S3 buckets (dev)
-        if: github.event.inputs.mode == 'full_destroy'
-        run: |
-          for bucket in weatherdata-raw-dev weatherdata-processed-dev weatherdata-athena-results-dev; do
-            echo "Emptying s3://$bucket ..."
-            aws s3 rb s3://$bucket --force 2>/dev/null && echo "Deleted $bucket" || echo "$bucket not found or already deleted"
-          done
-
-      - name: Terraform destroy dev
+      - name: Full destroy dev — Terraform
         if: github.event.inputs.mode == 'full_destroy'
         working-directory: terraform/environments/dev
         run: |
-          terraform state list 2>/dev/null && echo "--- state listed above ---" || echo "State is empty or inaccessible"
+          echo "=== Terraform state ==="
+          terraform state list 2>/dev/null || echo "(state empty or inaccessible)"
+          echo "=== Running terraform destroy ==="
           terraform destroy -auto-approve
-          echo "Dev infrastructure fully destroyed."
+
+      - name: Full destroy dev — AWS CLI cleanup
+        if: github.event.inputs.mode == 'full_destroy'
+        run: bash scripts/aws_teardown.sh dev
 
   # ── Prod teardown (requires manual approval via GitHub Environment) ──────────
   teardown-prod:
     name: Teardown → prod (${{ github.event.inputs.mode }})
     runs-on: ubuntu-latest
     needs: validate
-    if: github.event.inputs.environment == 'prod'
+    if: |
+      github.event.inputs.environment == 'prod' ||
+      github.event.inputs.environment == 'all'
     environment: prod          # triggers the required-reviewer gate
     permissions:
       id-token: write
@@ -133,56 +133,17 @@ jobs:
             -var="ecs_desired_count=0" \
             -auto-approve
           echo "Prod soft-stopped: scheduler disabled, ECS scaled to 0."
-          echo "ALB, VPC, ECR, S3, and Terraform state are all preserved."
-          echo "To resume: push to main or re-run the CD workflow."
+          echo "ALB, ECR, S3, and all infra preserved. To resume: push to main."
 
-      # ── full_destroy: direct AWS CLI cleanup first, then terraform destroy ──
-      # Running AWS CLI before terraform destroy means we succeed even when
-      # Terraform state is empty or out of sync with real AWS resources.
-
-      - name: Stop ECS service (prod)
-        if: github.event.inputs.mode == 'full_destroy'
-        run: |
-          aws ecs update-service \
-            --cluster weatherdata-prod \
-            --service weatherdata-streamlit-prod \
-            --desired-count 0 \
-            --no-cli-pager 2>/dev/null \
-            && echo "ECS service scaled to 0" \
-            || echo "ECS service not found or already stopped"
-          # Wait briefly for tasks to drain before ALB/cluster are destroyed
-          sleep 15
-
-      - name: Delete ECR images (prod)
-        if: github.event.inputs.mode == 'full_destroy'
-        run: |
-          IMAGE_IDS=$(aws ecr list-images \
-            --repository-name weatherdata-streamlit-prod \
-            --query 'imageIds[*]' \
-            --output json 2>/dev/null || echo "[]")
-          if [[ "$IMAGE_IDS" != "[]" && "$IMAGE_IDS" != "" ]]; then
-            aws ecr batch-delete-image \
-              --repository-name weatherdata-streamlit-prod \
-              --image-ids "$IMAGE_IDS" \
-              --no-cli-pager \
-              && echo "ECR images deleted" \
-              || echo "ECR batch-delete failed (repo may already be gone)"
-          else
-            echo "No ECR images found"
-          fi
-
-      - name: Empty S3 buckets (prod)
-        if: github.event.inputs.mode == 'full_destroy'
-        run: |
-          for bucket in weatherdata-raw-prod weatherdata-processed-prod weatherdata-athena-results-prod; do
-            echo "Emptying s3://$bucket ..."
-            aws s3 rb s3://$bucket --force 2>/dev/null && echo "Deleted $bucket" || echo "$bucket not found or already deleted"
-          done
-
-      - name: Terraform destroy prod
+      - name: Full destroy prod — Terraform
         if: github.event.inputs.mode == 'full_destroy'
         working-directory: terraform/environments/prod
         run: |
-          terraform state list 2>/dev/null && echo "--- state listed above ---" || echo "State is empty or inaccessible"
+          echo "=== Terraform state ==="
+          terraform state list 2>/dev/null || echo "(state empty or inaccessible)"
+          echo "=== Running terraform destroy ==="
           terraform destroy -auto-approve
-          echo "Prod infrastructure fully destroyed."
+
+      - name: Full destroy prod — AWS CLI cleanup
+        if: github.event.inputs.mode == 'full_destroy'
+        run: bash scripts/aws_teardown.sh prod
